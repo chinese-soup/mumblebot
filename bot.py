@@ -5,6 +5,7 @@ import re
 import requests
 import sys
 import random
+import os
 
 # pymumble
 import pymumble_py3
@@ -46,7 +47,7 @@ else:
 passwd = Settings.server_password
 
 # Set up pymumble
-mumble = pymumble_py3.Mumble(server, nick, password=passwd, reconnect=True)
+mumble = pymumble_py3.Mumble(server, nick, password=passwd, reconnect=True, certfile="data/public.pem", keyfile="data/private.pem")
 mumble.start()
 mumble.is_ready()
 print(mumble.users.myself)
@@ -61,6 +62,75 @@ cur = connection.cursor()
 cur.execute("""CREATE TABLE IF NOT EXISTS reminds (id INTEGER PRIMARY KEY, date INTEGER, author text, content text, created_time TIMESTAMP);""")
 cur.close()
 
+class Sounds:
+    sound_filenames = os.listdir("data/sounds/")
+    sound_names = [x.split(".")[0] for x in sound_filenames]
+    sound_map = {key: value for (key, value) in zip(sound_names, sound_filenames)}
+    sounds_joined = "|".join(sound_names)
+    sounds_re = re.compile(f"\.({sounds_joined}+?)(($|p|r|e){{0,4}})")
+
+def cmd_reload(args: list):
+    Sounds.sound_filenames = os.listdir("data/sounds/")
+    Sounds.sound_names = [x.split(".")[0] for x in Sounds.sound_filenames]
+    Sounds.sound_map = {key: value for (key, value) in zip(Sounds.sound_names, Sounds.sound_filenames)}
+    Sounds.sounds_joined = "|".join(Sounds.sound_names)
+    Sounds.sounds_re = re.compile(f"\.({Sounds.sounds_joined}+?)(($|p|r|e){{0,4}})")
+
+def add_af_helper(af, append):
+    if not af:
+        af += append
+    else:
+        af += f",{append}"
+    return af
+
+def sound_command(filename, pitch_shift=False, reverse=False, reverb=False):
+    cmd = ["ffmpeg", "-i", filename, "-ac", "1", "-f", "s16le", "-ar", "48000"]
+    af = ""
+
+    if pitch_shift:
+        meme = random.randint(1, 15) / 10
+        af = add_af_helper(af, f"asetrate=44100*{meme},aresample=44100,atempo=1/{meme}")
+
+    if reverse:
+        af = add_af_helper(af, "areverse")
+
+    if af:
+        cmd += ["-af", af]
+    else:
+        cmd = ["ffmpeg", "-i", filename, "-ac", "1", "-f", "s16le", "-ar", "48000"]
+
+    cmd.append("-")
+
+    if reverb:
+        sp = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                              stderr=subprocess.DEVNULL,
+                              stdin=subprocess.DEVNULL)
+
+        cmd_reverb = ["ffmpeg",
+                      "-f",
+                      "s16le",
+                      "-i",
+                      "pipe:",
+                      "-i",
+                      "data/tunnel_entrance_b_4way_mono.wav",
+                      "-filter_complex",
+                      '[0] [1] afir=dry=9:wet=2 [reverb]; [0] [reverb] amix=inputs=2:weights=10 8',
+                      "-f",
+                      "s16le",
+                      "-"]
+        sp_reverb = subprocess.Popen(cmd_reverb, stdout=subprocess.PIPE,
+                              stderr=subprocess.DEVNULL,
+                              stdin=sp.stdout)
+
+
+        result = sp_reverb.stdout.read()
+        mumble.sound_output.add_sound(result)
+
+    else:
+        sp = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                              stderr=subprocess.DEVNULL,
+                              stdin=subprocess.DEVNULL).stdout.read()
+        mumble.sound_output.add_sound(sp)
 
 def on_message(data):
     """
@@ -87,11 +157,10 @@ def on_message(data):
         else:
             title = Utils.get_url(match)
 
-        if title is not None:
-            mumble.my_channel().send_text_message("[Title] {}".format(title))
+        if title is None:
+            return
 
-        else:
-            print("Got none from get_url()")
+        mumble.my_channel().send_text_message("[Title] {}".format(title))
 
     else:
         print("Didn't match a http link", match)
@@ -102,6 +171,9 @@ def on_message(data):
         mumble.my_channel().send_text_message(f"<span style='font-size: 36px'><b>[{match_intensify.group(1).upper()} INTENSIFIES]</b></span>")
 
     match_implying = re_implying.match(msg)
+    pitched = False
+    reversed = False
+    reverb = False
 
     if match_implying is not None:
         inp = match_implying
@@ -136,6 +208,23 @@ def on_message(data):
     if msg.startswith(".commands") or msg.startswith(".help"):
         commands = [i.replace("cmd_", ".") if i.startswith("cmd_") else "" for i in globals()]
         mumble.my_channel().send_text_message(f"[<i>{Settings.bot_nickname}</i>] List of commands: {' '.join(commands)}")
+
+    elif msg.startswith(".sounds"):
+        mumble.my_channel().send_text_message(f"[<i>{Settings.bot_nickname}</i>] List of sound commands: {' | '.join(Sounds.sound_names)}")
+
+    elif Sounds.sounds_re.match(msg): # Tfw no py3.8 on server: match := sounds_re.match(msg):
+        match = Sounds.sounds_re.match(msg)
+        soundfile = Sounds.sound_map[match.group(1)]
+        bruh_file = f"data/sounds/{soundfile}"
+
+        if "p" in match.group(2):
+            pitched = True
+        if "r" in match.group(2):
+            reversed = True
+        if "e" in match.group(2):
+            reverb = True
+
+        sound_command(bruh_file, pitched, reversed, reverb)
 
     elif msg.startswith(Settings.command_prefix):
         msg = msg.strip().split()
