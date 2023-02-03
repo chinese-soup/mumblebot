@@ -63,17 +63,17 @@ cur.execute("""CREATE TABLE IF NOT EXISTS reminds (id INTEGER PRIMARY KEY, date 
 cur.close()
 
 class Sounds:
-    sound_filenames = os.listdir("data/sounds/")
-    sound_names = [x.split(".")[0] for x in sound_filenames]
+    sound_filenames = [x for x in os.listdir("data/sounds/") if x[0] != "."]
+    sound_names = [x.split(".")[0] for x in sound_filenames if x[0] != "."]
     sound_map = {key: value for (key, value) in zip(sound_names, sound_filenames)}
-    sounds_joined = "|".join(sound_names)
+    sounds_joined = "|\\b".join(sound_names)
     sounds_re = re.compile(f"\.({sounds_joined}+?)(($|p|r|e){{0,4}})")
 
 def cmd_reload(args: list):
-    Sounds.sound_filenames = os.listdir("data/sounds/")
-    Sounds.sound_names = [x.split(".")[0] for x in Sounds.sound_filenames]
+    Sounds.sound_filenames = [x for x in os.listdir("data/sounds/") if x[0] != "."]
+    Sounds.sound_names = [x.split(".")[0] for x in Sounds.sound_filenames if x[0] != "."]
     Sounds.sound_map = {key: value for (key, value) in zip(Sounds.sound_names, Sounds.sound_filenames)}
-    Sounds.sounds_joined = "|".join(Sounds.sound_names)
+    Sounds.sounds_joined = "|\\b".join(Sounds.sound_names)
     Sounds.sounds_re = re.compile(f"\.({Sounds.sounds_joined}+?)(($|p|r|e){{0,4}})")
 
 def add_af_helper(af, append):
@@ -281,8 +281,6 @@ def check_remind(timer: int) -> int:
         c.execute("SELECT * FROM reminds")  # WHERE date >= ? =< ;")
         for row in c:
             if int(row["date"]) < ts:
-                print(row["id"])
-                print(type(row["id"]))
                 c.execute("DELETE FROM reminds WHERE id = ?", (int(row["id"]),))
                 mumble.my_channel().send_text_message("[<i>Reminder</i>] Hey, <b>{0}</b>: {1} (saved {2})"
                                                       .format(row["author"], row["content"], row["created_time"].strftime("%a %d.%m.%Y %H:%M:%S")))
