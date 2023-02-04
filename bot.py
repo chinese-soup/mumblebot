@@ -11,7 +11,7 @@ import os
 import pymumble_py3
 from pymumble_py3.messages import TextMessage
 from pymumble_py3.callbacks import PYMUMBLE_CLBK_TEXTMESSAGERECEIVED as TEXT_RECEIVED
-
+from pymumble_py3.callbacks import PYMUMBLE_CLBK_USERCREATED as USER_CREATED
 # beautifulsoup
 from bs4 import BeautifulSoup
 
@@ -60,18 +60,24 @@ _GLOBALS = globals()
 connection = sqlite3.connect("reminds.db", detect_types=sqlite3.PARSE_DECLTYPES)
 cur = connection.cursor()
 cur.execute("""CREATE TABLE IF NOT EXISTS reminds (id INTEGER PRIMARY KEY, date INTEGER, author text, content text, created_time TIMESTAMP);""")
+cur.execute("""CREATE TABLE IF NOT EXISTS intros (id INTEGER PRIMARY KEY, date INTEGER, author text, content text, created_time TIMESTAMP);""")
 cur.close()
 
 class Sounds:
     sound_filenames = [x for x in os.listdir("data/sounds/") if x[0] != "."]
     sound_names = [x.split(".")[0] for x in sound_filenames if x[0] != "."]
+    sound_filenames.sort()
+    sound_names.sort()
     sound_map = {key: value for (key, value) in zip(sound_names, sound_filenames)}
     sounds_joined = "|\\b".join(sound_names)
     sounds_re = re.compile(f"\.({sounds_joined}+?)(($|p|r|e){{0,4}})")
+    print(sounds_re)
 
 def cmd_reload(args: list):
     Sounds.sound_filenames = [x for x in os.listdir("data/sounds/") if x[0] != "."]
     Sounds.sound_names = [x.split(".")[0] for x in Sounds.sound_filenames if x[0] != "."]
+    Sounds.sound_filenames.sort()
+    Sounds.sound_names.sort()
     Sounds.sound_map = {key: value for (key, value) in zip(Sounds.sound_names, Sounds.sound_filenames)}
     Sounds.sounds_joined = "|\\b".join(Sounds.sound_names)
     Sounds.sounds_re = re.compile(f"\.({Sounds.sounds_joined}+?)(($|p|r|e){{0,4}})")
@@ -246,6 +252,10 @@ def on_message(data):
         if cmd_fname in _GLOBALS:
             if "cmd_remind" == cmd_fname:
                 return_value = _GLOBALS[cmd_fname](args, mumble.users[data.actor])
+
+            elif "cmd_intro" == cmd_fname:
+                return_value = _GLOBALS[cmd_fname](args, mumble.users[data.actor])
+
             else:
                 return_value = _GLOBALS[cmd_fname](args)
 
@@ -257,7 +267,66 @@ def on_message(data):
         else:
             print("Ignored.")
 
+def on_userjoin(data):
+    print("User joined!!")
+    username = data["name"]
+
+    connection = sqlite3.connect("reminds.db", detect_types=sqlite3.PARSE_DECLTYPES)
+    c = connection.cursor()
+    c.execute("SELECT * FROM intros WHERE author = ?", (username,))
+    res = c.fetchone()
+
+    if not res:
+        output = f"Welcome, {username}. "
+    else:
+        sound_name = res[3]
+        output = f"Welcome, {username}. Sound: {sound_name}"
+
+        sound_gaga = Sounds.sound_map.get(sound_name)
+        if sound_gaga:
+            sound_command(os.path.join("data/sounds/", sound_gaga))
+        else:
+            output += f". Sound {sound_name} not found."
+
+    mumble.my_channel().send_text_message(output)
+
 mumble.callbacks.set_callback(TEXT_RECEIVED, on_message)
+mumble.callbacks.set_callback(USER_CREATED, on_userjoin)
+
+def cmd_intro(args: list, _from: str="") -> str:
+    if args:
+        data = " ".join(args)
+    else:
+        data = None
+
+    username = _from["name"]
+
+    if not _from:
+        return "Couldn't find your username."
+
+    try:
+        conn = sqlite3.connect("reminds.db", detect_types=sqlite3.PARSE_DECLTYPES)
+        c = conn.cursor()
+        c.execute("SELECT * FROM intros WHERE author = ?", (username,))
+        res = c.fetchone()
+
+        if not data and res:
+            return f"Your sound is `{res[3]}`"
+
+        if not res:
+            c.execute("INSERT INTO intros (id, author, content, created_time) values (NULL, ?, ?, ?)",
+                  (username, data, datetime.datetime.now()))
+        else:
+            c.execute("UPDATE intros SET content = (?) WHERE author = (?)", (data, username))
+            
+        conn.commit()
+        conn.close()
+
+        return "Saved, cya next time!"
+
+    except Exception as e:
+        print(e)
+        return "Sry, I failed."
 
 
 def check_remind(timer: int) -> int:
