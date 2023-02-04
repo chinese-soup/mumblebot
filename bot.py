@@ -318,7 +318,7 @@ def cmd_intro(args: list, _from: str="") -> str:
                   (username, data, datetime.datetime.now()))
         else:
             c.execute("UPDATE intros SET content = (?) WHERE author = (?)", (data, username))
-            
+
         conn.commit()
         conn.close()
 
@@ -439,7 +439,7 @@ def check_streams(timer: int, just_started: bool = False) -> int:
                     #  process and log 'deleteStream'
                     #  doesn't necessarily mean a stream was deleted. it's more 'disconnect'
                     elif publish_or_delete == "deleteStream":
-                        print("[STREAM] new 'deleteStream' log entry")
+                        # print("[STREAM] new 'deleteStream' log entry")
 
                         if session_id in Utils.past_publish:
                             if "deleted" in Utils.past_publish[session_id]:
@@ -459,8 +459,8 @@ def check_streams(timer: int, just_started: bool = False) -> int:
                                 Utils.past_publish[session_id]["deleted"] = True
 
                         else:
-                            print(f"[STREAM] I have never seen this stream ({session_id}), so I can't mark this as "
-                                  f"deleted.")
+                            pass
+                            # print(f"[STREAM] I have never seen this stream ({session_id}), so I can't mark this as deleted.")
                     else:
                         # Something is wrong in the log if we got here
                         print("[STREAM:WARN] new 'unknown' log entry: {}".format(single_stream))
