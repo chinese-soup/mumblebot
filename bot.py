@@ -69,9 +69,8 @@ class Sounds:
     sound_filenames.sort()
     sound_names.sort()
     sound_map = {key: value for (key, value) in zip(sound_names, sound_filenames)}
-    sounds_joined = "|\\b".join(sound_names)
-    sounds_re = re.compile(f"\.({sounds_joined}+?)(($|p|r|e){{0,4}})")
-    print(sounds_re)
+    sounds_joined = "|".join(sound_names)
+    sounds_re = re.compile(f"^({sounds_joined})((p|r|e|$){{1,4}})$")
 
 def cmd_reload(args: list):
     Sounds.sound_filenames = [x for x in os.listdir("data/sounds/") if x[0] != "."]
@@ -80,7 +79,7 @@ def cmd_reload(args: list):
     Sounds.sound_names.sort()
     Sounds.sound_map = {key: value for (key, value) in zip(Sounds.sound_names, Sounds.sound_filenames)}
     Sounds.sounds_joined = "|\\b".join(Sounds.sound_names)
-    Sounds.sounds_re = re.compile(f"\.({Sounds.sounds_joined}+?)(($|p|r|e){{0,4}})")
+    Sounds.sounds_re = re.compile(f"^({Sounds.sounds_joined})((p|r|e|$){{1,4}})$")
 
 def add_af_helper(af, append):
     if not af:
@@ -218,19 +217,6 @@ def on_message(data):
     elif msg.startswith(".sounds"):
         mumble.my_channel().send_text_message(f"[<i>{Settings.bot_nickname}</i>] List of sound commands: {' | '.join(Sounds.sound_names)}")
 
-    elif Sounds.sounds_re.match(msg): # Tfw no py3.8 on server: match := sounds_re.match(msg):
-        match = Sounds.sounds_re.match(msg)
-        soundfile = Sounds.sound_map[match.group(1)]
-        bruh_file = f"data/sounds/{soundfile}"
-
-        if "p" in match.group(2):
-            pitched = True
-        if "r" in match.group(2):
-            reversed = True
-        if "e" in match.group(2):
-            reverb = True
-
-        sound_command(bruh_file, pitched, reversed, reverb)
 
     elif msg.startswith(Settings.command_prefix):
         msg = msg.strip().split()
@@ -244,28 +230,49 @@ def on_message(data):
                 cmd_fname = "cmd_{}".format(i)
                 break
 
-        if cmd_fname is None: # we haven't found a command that matches, return early
-            return
+        if cmd_fname is not None: # we haven't found a command that matches, return early
 
-        args = msg[1:] or None
+            args = msg[1:] or None
 
-        if cmd_fname in _GLOBALS:
-            if "cmd_remind" == cmd_fname:
-                return_value = _GLOBALS[cmd_fname](args, mumble.users[data.actor])
+            if cmd_fname in _GLOBALS:
+                if "cmd_remind" == cmd_fname:
+                    return_value = _GLOBALS[cmd_fname](args, mumble.users[data.actor])
 
-            elif "cmd_intro" == cmd_fname:
-                return_value = _GLOBALS[cmd_fname](args, mumble.users[data.actor])
+                elif "cmd_intro" == cmd_fname:
+                    return_value = _GLOBALS[cmd_fname](args, mumble.users[data.actor])
 
+                else:
+                    return_value = _GLOBALS[cmd_fname](args)
+
+                if return_value is None:
+                    print("[<i>{0}</i>] Error: return value is None.".format(fname))
+                    # mumble.my_channel().send_text_message("[<i>{0}</i>] Error.".format(fname))
+                else:
+                    mumble.my_channel().send_text_message("{0}".format(return_value))
             else:
-                return_value = _GLOBALS[cmd_fname](args)
-
-            if return_value is None:
-                print("[<i>{0}</i>] Error: return value is None.".format(fname))
-                # mumble.my_channel().send_text_message("[<i>{0}</i>] Error.".format(fname))
-            else:
-                mumble.my_channel().send_text_message("{0}".format(return_value))
+                # It oculd be a sound
+                print("Ignored.")
         else:
-            print("Ignored.")
+            # Could be a sound
+            sounds_re_match = Sounds.sounds_re.match(fname)
+
+            if sounds_re_match is not None:
+                matched_sound = sounds_re_match.group(1)
+                soundfile = Sounds.sound_map[matched_sound]
+                bruh_file = f"data/sounds/{soundfile}"
+
+                modifiers = sounds_re_match.group(2)
+
+                if "p" in modifiers:
+                    pitched = True
+                if "r" in modifiers:
+                    reversed = True
+                if "e" in modifiers:
+                    reverb = True
+
+                sound_command(bruh_file, pitched, reversed, reverb)
+
+
 
 def on_userjoin(data):
     print("User joined!!")
