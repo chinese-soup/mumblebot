@@ -47,8 +47,7 @@ else:
 passwd = Settings.server_password
 
 # Set up pymumble
-#mumble = pymumble_py3.Mumble(server, nick, password=passwd, reconnect=True, certfile="data/public.pem", keyfile="data/private.pem")
-mumble = pymumble_py3.Mumble(server, nick, password=passwd, reconnect=True)
+mumble = pymumble_py3.Mumble(server, nick, password=passwd, reconnect=True, certfile="data/public.pem", keyfile="data/private.pem")
 mumble.start()
 mumble.is_ready()
 print(mumble.users.myself)
@@ -589,7 +588,7 @@ ag_server_value, players_old = check_ag_server(streams_value, players_old, initi
 
 while True: # Run periodically in the non-pymumble thread
     value = check_remind(value)
-    #streams_value = check_streams(streams_value)
+    streams_value = check_streams(streams_value)
     ag_records_value = check_ag_records(ag_records_value)
     ag_server_value, players_old = check_ag_server(ag_server_value, players_old)
 
