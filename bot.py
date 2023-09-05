@@ -47,7 +47,8 @@ else:
 passwd = Settings.server_password
 
 # Set up pymumble
-mumble = pymumble_py3.Mumble(server, nick, password=passwd, reconnect=True, certfile="data/public.pem", keyfile="data/private.pem")
+#mumble = pymumble_py3.Mumble(server, nick, password=passwd, reconnect=True, certfile="data/public.pem", keyfile="data/private.pem")
+mumble = pymumble_py3.Mumble(server, nick, password=passwd, reconnect=True)
 mumble.start()
 mumble.is_ready()
 print(mumble.users.myself)
@@ -241,6 +242,11 @@ def on_message(data):
                 elif "cmd_intro" == cmd_fname:
                     return_value = _GLOBALS[cmd_fname](args, mumble.users[data.actor])
 
+                elif "cmd_osrs_wise" == cmd_fname:
+                    skill = args[-1]
+                    # concat all previous args into one for the username
+                    username = " ".join(args[:-1])
+                    return_value = _GLOBALS[cmd_fname](username, skill, args)
                 else:
                     return_value = _GLOBALS[cmd_fname](args)
 
@@ -583,7 +589,7 @@ ag_server_value, players_old = check_ag_server(streams_value, players_old, initi
 
 while True: # Run periodically in the non-pymumble thread
     value = check_remind(value)
-    streams_value = check_streams(streams_value)
+    #streams_value = check_streams(streams_value)
     ag_records_value = check_ag_records(ag_records_value)
     ag_server_value, players_old = check_ag_server(ag_server_value, players_old)
 

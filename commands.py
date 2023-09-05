@@ -170,6 +170,91 @@ def cmd_server(args: list) -> str:
     except:
         return "Failed to contact the game server."
 
+def cmd_osrs_wise(username: str, skill: str, other_argument: str) -> str:   # Check if the username is a list and extract the first element
+    skill_short = {
+        'total': 'overall',
+        'att': 'attack',
+        'def': 'defence',
+        'str': 'strength',
+        'hp': 'hitpoints',
+        'range': 'ranged',
+        'pray': 'prayer',
+        'mage': 'magic',
+        'cook': 'cooking',
+        'wc': 'woodcutting',
+        'fletch': 'fletching',
+        'fish': 'fishing',
+        'fm, fire': 'firemaking',
+        'craft': 'crafting',
+        'smith': 'smithing',
+        'mine': 'mining',
+        'herb': 'herblore',
+        'agi': 'agility',
+        'thieve, theif': 'thieving',
+        'slay': 'slayer',
+        'farm': 'farming',
+        'rc, runecraft': 'runecrafting',
+        'hunt': 'hunter',
+        'con, cons': 'construction',
+        'sail': 'sailing',
+        # Add more abbreviations as needed
+    }
+
+    if skill in skill_short:
+        skill = skill_short[skill]
+
+    try:
+        base_url = "https://api.wiseoldman.net/v2"
+        endpoint = f"/players/{username}"
+
+        response = requests.get(base_url + endpoint)
+
+        if response.status_code == 404:
+            # Send a POST request
+            post_response = requests.post(base_url + endpoint)
+
+            if post_response.status_code == 400:
+                return f"Error: Player '{username}' not found"
+            elif post_response.status_code == 200:
+                response = post_response
+            else:
+                return f"Error: error: {post_response.status_code}"
+
+        if response.status_code == 200:
+            player_data = response.json()
+
+            # check if the account has all the juicy info on wiseoldman or not
+            if 'latestSnapshot' in player_data and (player_data['latestSnapshot'] is None):
+                return f"""Error: Player '{username}' is incomplete or missing<br />
+                        you just posted perma cringe to wiseoldmans db"""
+
+            account_type = player_data['type']
+            account_build = player_data['build']
+            account_username = player_data['displayName']
+
+            skill_data = player_data['latestSnapshot']['data']['skills'][skill]
+            skill_xp = skill_data['experience']
+            skill_rank = skill_data['rank']
+            skill_level = skill_data['level']
+            skill_ehp = skill_data['ehp']
+
+            return f"""
+                    <b style="color:#ff5558">{skill} stats</b>
+                    <ul>
+                    <li><b>Name:</b> {account_username}</b></li>
+                    <li><b>Experience:</b> {skill_xp:,}</li>
+                    <li><b>Rank:</b> {skill_rank:,}</li>
+                    <li><b>Level:</b> {skill_level}</li>
+                    <li><b>EHP:</b> {skill_ehp:.2f}</li>
+                    <li><b>Type:</b> {account_type} - {account_build}</li>
+                    </ul>
+                    """
+        else:
+            return f"Error: Unexpected status code {response.status_code}"
+
+    except Exception as e:
+        return f"Error: {str(e)}"
+
 
 def cmd_currency(args: list) -> str:
     """
