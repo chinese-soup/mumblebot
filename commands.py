@@ -197,7 +197,6 @@ def cmd_osrs_wise(username: str, skill: str, other_argument: str) -> str:   # Ch
         'hunt': 'hunter',
         'con, cons': 'construction',
         'sail': 'sailing',
-        # Add more abbreviations as needed
     }
 
     if skill in skill_short:
