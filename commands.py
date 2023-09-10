@@ -170,6 +170,79 @@ def cmd_server(args: list) -> str:
     except:
         return "Failed to contact the game server."
 
+def cmd_follow(args):
+    name = args[0]
+    connection = sqlite3.connect("twitch_streams.db", detect_types=sqlite3.PARSE_DECLTYPES)
+    c = connection.cursor()
+    c.execute("SELECT * FROM twitch_streams WHERE username=?;", [name,])
+    res = c.fetchone()
+    username, id = None, 1337
+
+
+    """if not res:
+        #twitch_req_session = requests.session()
+        #twitch_req_session.headers = Const.twitch_req_session_headers
+        #get_id = twitch_req_session.get("https://api.twitch.tv/kraken/users", params={"login": name})  # TODO: Unhardcode this shit
+        #if get_id.status_code == 200:
+        #   get_id_json = get_id.json()
+        #   if get_id_json["_total"] == 1:
+        #username = get_id_json["users"][0]["display_name"]
+        #id = get_id_json["users"][0]["_id"]
+        #   else:
+        #       return "Either NONE or more than one channel found for this channel name. Fuck you."
+
+        else:
+            return "Failure to acquire ID for the specified channel."
+
+    else:
+        return "User <b>{0}</b> is already followed.".format(name)"""
+
+    if id:
+        c.execute("""INSERT INTO twitch_streams 
+        (id, username, channel_id) values (NULL, ?, ?)""", (name, id))
+        connection.commit()
+        connection.close()
+
+        return "User <b>{0}</b> followed.".format(name)
+
+    #is_live_req = twitch_req_session.get("https://api.twitch.tv/kraken/streams/{}".format(ID_COLFRA))  # TODO: Unhardcode this shit
+
+
+def cmd_unfollow(args):
+    name = args[0]
+    connection = sqlite3.connect("twitch_streams.db", detect_types=sqlite3.PARSE_DECLTYPES)
+    c = connection.cursor()
+    c.execute("SELECT * FROM twitch_streams WHERE username=?;", [name, ])
+    res = c.fetchone()
+    username, id = None, None
+
+    if not res:
+        connection.commit()
+        connection.close()
+        return "Channel {0} is not followed right now.".format(name)
+
+    else:
+
+        c.execute("""DELETE FROM twitch_streams WHERE id = ? AND username = ?""", (res[0], res[1]))
+        connection.commit()
+        connection.close()
+        return "User <b>{0}</b> unfollowed.".format(name)
+
+def cmd_list(args):
+    connection = sqlite3.connect("twitch_streams.db", detect_types=sqlite3.PARSE_DECLTYPES)
+    c = connection.cursor()
+    c.execute("SELECT * FROM twitch_streams")
+    res = c.fetchall()
+
+    if not res:
+        return "Error occurred lolmao."
+    else:
+        output = "List of followed channels: <ul>"
+        for i in res:
+            output += "<li>{0} | {1} | {2}</li>".format(i[0], i[1], i[2])
+        output += "</ul>"
+        return output
+
 
 def cmd_currency(args: list) -> str:
     """
@@ -213,7 +286,7 @@ def cmd_currency(args: list) -> str:
 
             return answer
     else:
-        return "There was an error."
+        return "There was an error: {req.status_code}"
 
 
 def cmd_calculator(args: list) -> str:
