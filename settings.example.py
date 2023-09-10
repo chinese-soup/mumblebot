@@ -24,6 +24,11 @@ class Settings:
     hlds_server_ip = ""
     hlds_server_port = 27015
 
+    minecraft_servers = [
+        {"ip": "127.0.0.1", "port": 25565},
+        {"ip": "mojang.com", "port": 42069}
+    ]
+
     ag_records_url = ""
     get_map_url = ""
 
