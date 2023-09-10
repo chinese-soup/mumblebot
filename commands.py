@@ -195,7 +195,11 @@ def cmd_minecraft_server(args: list) -> str:
                     for player in status.players.sample:
                         players_output += f"<li><b>{player.name}</b></li>"
 
-                players_list = '<ol>' + players_output + '</ol>' if status.players.sample and len(status.players.sample) > 1 else ''
+                players_list = (
+                    "<ol>" + players_output + "</ol>"
+                    if status.players.sample and len(status.players.sample) > 1
+                    else ""
+                )
 
                 server_info_output += f"""
                 <b style="color:#ff5558"> {status.motd.parsed[0]}</b>

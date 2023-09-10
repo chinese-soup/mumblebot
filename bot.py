@@ -700,7 +700,11 @@ def check_minecraft_servers(timer, mc_players_old, just_started=False):
                 mc_server = JavaServer.lookup(f"{server['ip']}:{server['port']}")
                 status = mc_server.status()
 
-                mc_players = [player.name for player in status.players.sample] if status.players.sample else []
+                mc_players = (
+                    [player.name for player in status.players.sample]
+                    if status.players.sample
+                    else []
+                )
 
                 # Convert both old and current player lists to sets for efficient comparison
                 mc_players_set = set(mc_players)
@@ -712,7 +716,7 @@ def check_minecraft_servers(timer, mc_players_old, just_started=False):
                 if new_players:
                     if not just_started:
                         # Announce the new player(s)
-                        new_players_text = ', '.join(new_players)
+                        new_players_text = ", ".join(new_players)
                         mumble.my_channel().send_text_message(
                             f"""<br />
                             <span style="font-size:8pt"><b style="color:#ff5558">{new_players_text}</b> joined:<br />
@@ -727,7 +731,6 @@ def check_minecraft_servers(timer, mc_players_old, just_started=False):
             print("Failed to contact Minecraft servers:", str(e))
 
     return timer, mc_players_old
-
 
 
 def check_ag_records(timer, just_started=False):
@@ -907,7 +910,9 @@ timer = 0
 # Run periodic stuff manually first, to get initial states in
 streams_value = check_streams(streams_value, initial_start)
 ag_records_value = check_ag_records(streams_value, initial_start)
-mc_server_value, mc_players_old = check_minecraft_servers(timer, mc_players_old, initial_start)
+mc_server_value, mc_players_old = check_minecraft_servers(
+    timer, mc_players_old, initial_start
+)
 ag_server_value, players_old = check_ag_server(
     streams_value, players_old, initial_start
 )
@@ -922,6 +927,8 @@ while True:  # Run periodically in the non-pymumble thread
     # checks_sound_data_value = check_sound_data(checks_sound_data_value)
     twitchs_value = check_twitch(twitchs_value, initial_start)
 
-    mc_server_value, mc_players_old = check_minecraft_servers(mc_server_value, mc_players_old)
+    mc_server_value, mc_players_old = check_minecraft_servers(
+        mc_server_value, mc_players_old
+    )
 
     time.sleep(1)
