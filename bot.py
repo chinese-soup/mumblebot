@@ -779,8 +779,6 @@ def check_twitch(timer, just_started=False):
     if timer > 120:
         print("Hey babe. Time to check for twitch streams.")
         timer = 0
-        # ID_EGGU = "45682935" # TODO: GET RID OF
-        # ID_COLFRA = "28084440" # TODO: unhardcode
 
         if len(_past_twitchs) > 20:  # queue
             _past_twitchs.pop(0)

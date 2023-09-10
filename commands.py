@@ -21,7 +21,7 @@ from geoip import geolite2
 from settings import Settings
 
 # Pre-compiled regular expressions
-from regexp import _wiki_regex
+from regexp import _wiki_regex, osrs_skill_short
 
 # Bot utils
 from utils import Utils
@@ -177,39 +177,10 @@ def cmd_server(args: list) -> str:
         return "Failed to contact the game server."
 
 
-def cmd_osrs_wise(
-    username: str, skill: str, other_argument: str
-) -> str:  # Check if the username is a list and extract the first element
-    skill_short = {
-        "total": "overall",
-        "att": "attack",
-        "def": "defence",
-        "str": "strength",
-        "hp": "hitpoints",
-        "range": "ranged",
-        "pray": "prayer",
-        "mage": "magic",
-        "cook": "cooking",
-        "wc": "woodcutting",
-        "fletch": "fletching",
-        "fish": "fishing",
-        "fm, fire": "firemaking",
-        "craft": "crafting",
-        "smith": "smithing",
-        "mine": "mining",
-        "herb": "herblore",
-        "agi": "agility",
-        "thieve, theif": "thieving",
-        "slay": "slayer",
-        "farm": "farming",
-        "rc, runecraft": "runecrafting",
-        "hunt": "hunter",
-        "con, cons": "construction",
-        "sail": "sailing",
-    }
-
-    if skill in skill_short:
-        skill = skill_short[skill]
+def cmd_osrs_wise(username: str, skill: str, other_argument: str) -> str:
+    # Check if the username is a list and extract the first element
+    if skill in osrs_skill_short:
+        skill = osrs_skill_short[skill]
 
     try:
         base_url = "https://api.wiseoldman.net/v2"
