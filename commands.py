@@ -12,6 +12,8 @@ from tabulate import tabulate
 # For obtaining Half-Life server info
 import a2s
 
+from mcstatus import JavaServer
+
 # For databases (.remind)
 import sqlite3
 
@@ -175,6 +177,47 @@ def cmd_server(args: list) -> str:
 
     except:
         return "Failed to contact the game server."
+
+
+def cmd_minecraft_server(args: list) -> str:
+    try:
+        minecraft_servers = Settings.minecraft_servers
+        server_info_output = ""
+        num_servers = len(minecraft_servers)
+
+        for index, server in enumerate(minecraft_servers):
+            try:
+                mc_server = JavaServer.lookup(server["ip"] + ":" + str(server["port"]))
+                status = mc_server.status()
+
+                players_output = ""
+                if status.players.sample:
+                    for player in status.players.sample:
+                        players_output += f"<li><b>{player.name}</b></li>"
+
+                players_list = '<ol>' + players_output + '</ol>' if status.players.sample and len(status.players.sample) > 1 else ''
+
+                server_info_output += f"""
+                <b style="color:#ff5558"> {status.motd.parsed[0]}</b>
+                <ul>
+                <li><b>Version:</b> {status.version.name}</li>
+                <li><b>Players:</b> {status.players.online}/{status.players.max}</li>
+                <li><b>Ping:</b> {int(status.latency * 100) / 100}ms
+                </ul>
+                {players_list}
+                <p style="font-size:6pt">{server["ip"]}:{server["port"]}</p></span>
+                """
+
+                if index < num_servers - 1:
+                    server_info_output += "<br>"
+
+            except:
+                server_info_output += f"Failed to contact the Minecraft server at {server['ip']}:{server['port']}<br>"
+
+        return server_info_output
+
+    except:
+        return "Failed to contact the Minecraft servers."
 
 
 def cmd_osrs_wise(args: list) -> str:

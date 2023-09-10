@@ -32,6 +32,8 @@ from utils import Utils
 import a2s
 from steam import game_servers as gs
 
+from mcstatus import JavaServer
+
 # Pre-compiled regular expressions
 from regexp import _stream_all_regex, link_re, re_implying, re_intensify
 
@@ -686,6 +688,48 @@ def check_ag_server(timer, players_old, just_started=False):
     return timer, players_old
 
 
+def check_minecraft_servers(timer, mc_players_old, just_started=False):
+    timer += 1
+
+    if timer > 15 or just_started:
+        timer = 0  # Reset timer, regardless of result
+        try:
+            minecraft_servers = Settings.minecraft_servers
+
+            for server in minecraft_servers:
+                mc_server = JavaServer.lookup(f"{server['ip']}:{server['port']}")
+                status = mc_server.status()
+
+                mc_players = [player.name for player in status.players.sample] if status.players.sample else []
+
+                # Convert both old and current player lists to sets for efficient comparison
+                mc_players_set = set(mc_players)
+                mc_players_old_set = set(mc_players_old)
+
+                # Find new players (players in the current set but not in the old set)
+                new_players = mc_players_set - mc_players_old_set
+
+                if new_players:
+                    if not just_started:
+                        # Announce the new player(s)
+                        new_players_text = ', '.join(new_players)
+                        mumble.my_channel().send_text_message(
+                            f"""<br />
+                            <span style="font-size:8pt"><b style="color:#ff5558">{new_players_text}</b> joined:<br />
+                            {status.motd.parsed[0]}<br />
+                            players: {status.players.online}/{status.players.max}</span>"""
+                        )
+
+            # Update the old player list after processing all servers
+            mc_players_old = mc_players
+
+        except Exception as e:
+            print("Failed to contact Minecraft servers:", str(e))
+
+    return timer, mc_players_old
+
+
+
 def check_ag_records(timer, just_started=False):
     timer += 1
 
@@ -856,10 +900,14 @@ value = 0
 streams_value = 0
 players_old = []
 initial_start = True
+mc_players_old = []
+timer = 0
+
 
 # Run periodic stuff manually first, to get initial states in
 streams_value = check_streams(streams_value, initial_start)
 ag_records_value = check_ag_records(streams_value, initial_start)
+mc_server_value, mc_players_old = check_minecraft_servers(timer, mc_players_old, initial_start)
 ag_server_value, players_old = check_ag_server(
     streams_value, players_old, initial_start
 )
@@ -873,5 +921,7 @@ while True:  # Run periodically in the non-pymumble thread
     ag_server_value, players_old = check_ag_server(ag_server_value, players_old)
     # checks_sound_data_value = check_sound_data(checks_sound_data_value)
     twitchs_value = check_twitch(twitchs_value, initial_start)
+
+    mc_server_value, mc_players_old = check_minecraft_servers(mc_server_value, mc_players_old)
 
     time.sleep(1)
