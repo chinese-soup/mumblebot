@@ -55,6 +55,8 @@ print(dir(mumble.users))
 # mumble.users.myself.deafen()
 mumble.set_receive_sound(False)
 _GLOBALS = globals()
+USERS = {}
+_past_twitchs = {}
 
 # Reminders stuff
 connection = sqlite3.connect("reminds.db", detect_types=sqlite3.PARSE_DECLTYPES)
@@ -62,6 +64,11 @@ cur = connection.cursor()
 cur.execute("""CREATE TABLE IF NOT EXISTS reminds (id INTEGER PRIMARY KEY, date INTEGER, author text, content text, created_time TIMESTAMP);""")
 cur.execute("""CREATE TABLE IF NOT EXISTS intros (id INTEGER PRIMARY KEY, date INTEGER, author text, content text, created_time TIMESTAMP);""")
 cur.close()
+
+connection_twitch_db = sqlite3.connect("twitch_streams.db", detect_types=sqlite3.PARSE_DECLTYPES)
+c_twitch = connection_twitch_db.cursor()
+#c.execute("""DROP TABLE reminds""")
+c_twitch.execute("""CREATE TABLE IF NOT EXISTS twitch_streams (id INTEGER PRIMARY KEY, username INTEGER, channel_id INTEGER);""")
 
 class Sounds:
     sound_filenames = [x for x in os.listdir("data/sounds/") if x[0] != "."]
@@ -75,11 +82,35 @@ class Sounds:
 def cmd_reload(args: list):
     Sounds.sound_filenames = [x for x in os.listdir("data/sounds/") if x[0] != "."]
     Sounds.sound_names = [x.split(".")[0] for x in Sounds.sound_filenames if x[0] != "."]
-    Sounds.sound_filenames.sort()
++    Sounds.sound_filenames.sort()
     Sounds.sound_names.sort()
     Sounds.sound_map = {key: value for (key, value) in zip(Sounds.sound_names, Sounds.sound_filenames)}
     Sounds.sounds_joined = "|\\b".join(Sounds.sound_names)
     Sounds.sounds_re = re.compile(f"^({Sounds.sounds_joined})((p|r|e|$){{1,4}})$")
+
+
+def cmd_twitch(args: str) -> str:
+    #{"timestamp": timestamp, "channel_name": channel_name, "title": title}
+    final = f"""<span><strong style='color:{Settings.header_color}'><br/>Streamer list</strong>:</span><ul>"""
+
+    #currently_live = [x for x in Utils.past_publish.values() if "deleted" not in x]
+
+    if len(_past_twitchs) < 1:
+        final = f"<span><strong style='color:{Settings.header_color}'><br/>Sorry, no Twitch streams</strong></span><ul>"
+        return final
+
+    # build the output
+    for k in _past_twitchs.keys():
+        name = k.split("_")[0]
+        title = _past_twitchs[k].get("title")
+        final += (
+            f"""<li style="margin:10px"><a href='https://twitch.tv/{name}'>twitch.tv/{name}</a> 
+            streaming {title} </b></li>"""
+        )
+
+    final += "</ul>"
+
+    return final
 
 def add_af_helper(af, append):
     if not af:
@@ -91,6 +122,7 @@ def add_af_helper(af, append):
 def sound_command(filename, pitch_shift=False, reverse=False, reverb=False):
     cmd = ["ffmpeg", "-i", filename, "-ac", "1", "-f", "s16le", "-ar", "48000"]
     af = ""
+    af = add_af_helper(af, "loudnorm=i=-32")
 
     if pitch_shift:
         meme = random.randint(1, 15) / 10
@@ -367,14 +399,31 @@ def check_remind(timer: int) -> int:
                                                       .format(row["author"], row["content"], row["created_time"].strftime("%a %d.%m.%Y %H:%M:%S")))
 
                 speech = "Hey, {}, reminder: {}".format(row["author"], row["content"])
-                espeak_cmd = ["espeak", "--stdout", "-a", "20", speech]
-                espeak_pipe = subprocess.Popen(espeak_cmd, stdout=subprocess.PIPE).stdout
+                #espeak_cmd = ["espeak", "--stdout", "-a", "20", speech]
+                #espeak_pipe = subprocess.Popen(espeak_cmd, stdout=subprocess.PIPE, stdin=subprocess.PIPE)
+                
+                #espeak_cmd = ["pico2wave", "--wave", "tmp.wav", "-l", "en-GB", speech]
+                #espeak_pipe = subprocess.Popen(espeak_cmd, stdout=subprocess.PIPE, stdin=subprocess.PIPE)
+                #file = espeak_pipe.communicate(input=speech.encode("utf-8"))[0]
+                try:
+                    b = requests.post("http://ag.shitpost.fun:59125/api/tts", data=speech[0:150], timeout=2)
+                    if b.status_code == 200:
+                        s = b.content
 
-                cmd = ["ffmpeg", "-i", "-", "-ac", "1", "-f", "s16le", "-ar", "48000", "-"]
-                sound = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                                         stdin=espeak_pipe).stdout.read()
+                        cmd = ["ffmpeg", "-i", "-", "-ac", "1", "-f", "s16le", "-ar", "48000", "-"]
+                        ffmpeg_sp = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                                stdin=subprocess.PIPE)
+                        sound, err = ffmpeg_sp.communicate(input=s)
+                        #print("Sound is =", sound)
+                        #print("Err is =", err)
 
-                mumble.sound_output.add_sound(sound)
+                        #espeak_cmd = ["espeak", "--stdout", "-a", "20", speech]
+                        #espeak_pipe = subprocess.Popen(espeak_cmd, stdout=subprocess.PIPE).stdout
+                        #print(file)
+                        mumble.sound_output.add_sound(sound)
+                except:
+                    print("Failed")
+                
 
         conn.commit()
         conn.close()
@@ -575,6 +624,81 @@ def check_ag_records(timer, just_started=False):
 
     return timer
 
+
+def check_twitch(timer, just_started=False):
+    timer += 1
+
+    if timer > 120:
+        print("Hey babe. Time to check for twitch streams.")
+        timer = 0
+        #ID_EGGU = "45682935" # TODO: GET RID OF
+        #ID_COLFRA = "28084440" # TODO: unhardcode
+
+        if len(_past_twitchs) > 20: # queue
+            _past_twitchs.pop(0)
+
+        connection = sqlite3.connect("twitch_streams.db", detect_types=sqlite3.PARSE_DECLTYPES)
+        c = connection.cursor()
+        c.execute("SELECT * FROM twitch_streams")
+        res = c.fetchall()
+
+        for id, name, channel_id in res:
+            #is_live_req = Const.twitch_req_session.get("https://api.twitch.tv/kraken/streams/{}".format(channel_id))
+            is_live_req = requests.get(f"https://twitch.tv/{name}")
+            print("[Twitch] Checking {0} {1} {2}".format(id, name, channel_id))
+
+            if is_live_req.status_code == 200:
+                #is_live_json = is_live_req.json()
+                website_text = is_live_req.text
+
+                if "isLiveBroadcast" not in website_text:
+                    print(f"This channel is not streaming {name}")
+                    """try:
+                        pass
+                        #_past_twitchs.pop(name)
+                    except:
+                        pass"""
+                    continue
+
+                soup = BeautifulSoup(is_live_req.text, "lxml")
+                results = soup.findAll("script", {"type": "application/ld+json"})
+
+                if len(results) == 0:
+                    continue
+
+                result = results[0]
+                stream = json.loads(result.string)
+                publication = stream[0].get("publication")
+                timestamp = publication.get("startDate")
+                title = stream[0]["description"]
+                channel_name = name
+                print(timestamp, title, channel_name)
+                key = f"{name}"
+
+                if key in _past_twitchs and _past_twitchs[key]["timestamp"] == timestamp:
+                    print("[TWITCH !!!] I already posted this: {0} {1}".format(timestamp, channel_name))
+                else:
+                    single_stream = {"timestamp": timestamp, "channel_name": channel_name, "title": title,
+                                     "time_added": datetime.datetime.now()}
+                    _past_twitchs[key] = single_stream
+                    print("[STREAM] Hello, new TWITCH appeared: {0}".format(single_stream))
+                    mumble.my_channel().send_text_message(
+                            '''<span><strong>Twitch.tv stream alert</strong>: 
+                            <ul>
+                            <li><b>{0}</b> started streaming <b> | <a href='http://twitch.tv/{0}'>http://twitch.tv/{0}</a></b>.</li>
+                            <li><b>Title: </b> {2}</li>
+                            <li>Published @ {1} (UTC)</li>
+                            </ul></span>'''
+                                .format(channel_name,
+                                        timestamp, title)
+                        )
+
+    else:
+        print("[Twitch] Timer not yet ticking.")
+
+    return timer
+
+
 # Prepare initial vars for periodic checks
 value = 0
 streams_value = 0
@@ -585,11 +709,15 @@ initial_start = True
 streams_value = check_streams(streams_value, initial_start)
 ag_records_value = check_ag_records(streams_value, initial_start)
 ag_server_value, players_old = check_ag_server(streams_value, players_old, initial_start)
+#checks_sound_data_value = check_sound_data(streams_value, initial_start)
+twitchs_value = check_twitch(119, False)
 
 while True: # Run periodically in the non-pymumble thread
     value = check_remind(value)
     streams_value = check_streams(streams_value)
     ag_records_value = check_ag_records(ag_records_value)
     ag_server_value, players_old = check_ag_server(ag_server_value, players_old)
+   #checks_sound_data_value = check_sound_data(checks_sound_data_value)
+    twitchs_value = check_twitch(twitchs_value, initial_start)
 
     time.sleep(1)
