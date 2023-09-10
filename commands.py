@@ -23,13 +23,13 @@ from geoip import geolite2
 from settings import Settings
 
 # Pre-compiled regular expressions
-from regexp import _wiki_regex
+from regexp import _wiki_regex, osrs_skill_short
 
 # Bot utils
 from utils import Utils
 
 
-def cmd_remind(args: list, _from: str="N/A") -> str:
+def cmd_remind(args: list, _from: str = "N/A") -> str:
     date = " ".join(args)
     print(date)
     print(_from)
@@ -46,14 +46,18 @@ def cmd_remind(args: list, _from: str="N/A") -> str:
     try:
         conn = sqlite3.connect("reminds.db", detect_types=sqlite3.PARSE_DECLTYPES)
         c = conn.cursor()
-        c.execute("INSERT INTO reminds (id, date, author, content, created_time) values (NULL, ?, ?, ?, ?)",
-                  (dt.timestamp(), _from["name"], data, datetime.datetime.now()))
+        c.execute(
+            "INSERT INTO reminds (id, date, author, content, created_time) values (NULL, ?, ?, ?, ?)",
+            (dt.timestamp(), _from["name"], data, datetime.datetime.now()),
+        )
 
         conn.commit()
         conn.close()
         print(dt, data)
 
-        return "Saved, maybe. Will remind you <b>{}</b> @ {} ".format(str(data), dt.strftime("%a %d.%m.%Y %H:%M:%S"))
+        return "Saved, maybe. Will remind you <b>{}</b> @ {} ".format(
+            str(data), dt.strftime("%a %d.%m.%Y %H:%M:%S")
+        )
 
     except Exception as e:
         print(e)
@@ -71,7 +75,7 @@ def cmd_roll(args: list) -> str:
         except ValueError:
             return "Error, can't cast number to integer."
 
-    return u"{}".format(randint(0, maximum))
+    return "{}".format(randint(0, maximum))
 
 
 def cmd_google(args: list) -> str:
@@ -139,7 +143,9 @@ def cmd_pure(args: list) -> str:
     if mapname:
         ret_code = Utils.get_map(mapname, number)
         if ret_code == 404:
-            ret_code = Utils.get_map(f"bhop_{mapname}", number) # Not found? Try bhop_MAPNAME first.
+            ret_code = Utils.get_map(
+                f"bhop_{mapname}", number
+            )  # Not found? Try bhop_MAPNAME first.
 
             if ret_code == 404:
                 return "Error 404"
@@ -214,6 +220,163 @@ def cmd_minecraft_server(args: list) -> str:
         return "Failed to contact the Minecraft servers."
 
 
+def cmd_osrs_wise(args: list) -> str:
+    # Check if the username is a list and extract the first element
+    skill = args[-1]
+    # concat all previous args into one for the username
+    username = " ".join(args[:-1])
+
+    if skill in osrs_skill_short:
+        skill = osrs_skill_short[skill]
+
+    try:
+        base_url = "https://api.wiseoldman.net/v2"
+        endpoint = f"/players/{username}"
+
+        response = requests.get(base_url + endpoint)
+
+        if response.status_code == 404:
+            # Send a POST request
+            post_response = requests.post(base_url + endpoint)
+
+            if post_response.status_code == 400:
+                return f"Error: Player '{username}' not found"
+            elif post_response.status_code == 200:
+                response = post_response
+            else:
+                return f"Error: error: {post_response.status_code}"
+
+        if response.status_code == 200:
+            player_data = response.json()
+
+            # check if the account has all the juicy info on wiseoldman or not
+            if "latestSnapshot" in player_data and (
+                player_data["latestSnapshot"] is None
+            ):
+                return f"""Error: Player '{username}' is incomplete or missing<br />
+                        you just posted perma cringe to wiseoldmans db"""
+
+            account_type = player_data["type"]
+            account_build = player_data["build"]
+            account_username = player_data["displayName"]
+
+            skill_data = player_data["latestSnapshot"]["data"]["skills"][skill]
+            skill_xp = skill_data["experience"]
+            skill_rank = skill_data["rank"]
+            skill_level = skill_data["level"]
+            skill_ehp = skill_data["ehp"]
+
+            return f"""
+                    <b style="color:#ff5558">{skill} stats</b>
+                    <ul>
+                    <li><b>Name:</b> {account_username}</b></li>
+                    <li><b>Experience:</b> {skill_xp:,}</li>
+                    <li><b>Rank:</b> {skill_rank:,}</li>
+                    <li><b>Level:</b> {skill_level}</li>
+                    <li><b>EHP:</b> {skill_ehp:.2f}</li>
+                    <li><b>Type:</b> {account_type} - {account_build}</li>
+                    </ul>
+                    """
+        else:
+            return f"Error: Unexpected status code {response.status_code}"
+
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+
+def cmd_follow(args):
+    name = args[0]
+    connection = sqlite3.connect(
+        "twitch_streams.db", detect_types=sqlite3.PARSE_DECLTYPES
+    )
+    c = connection.cursor()
+    c.execute(
+        "SELECT * FROM twitch_streams WHERE username=?;",
+        [
+            name,
+        ],
+    )
+    res = c.fetchone()
+    username, id = None, 1337
+
+    """if not res:
+        #twitch_req_session = requests.session()
+        #twitch_req_session.headers = Const.twitch_req_session_headers
+        #get_id = twitch_req_session.get("https://api.twitch.tv/kraken/users", params={"login": name})  # TODO: Unhardcode this shit
+        #if get_id.status_code == 200:
+        #   get_id_json = get_id.json()
+        #   if get_id_json["_total"] == 1:
+        #username = get_id_json["users"][0]["display_name"]
+        #id = get_id_json["users"][0]["_id"]
+        #   else:
+        #       return "Either NONE or more than one channel found for this channel name. Fuck you."
+
+        else:
+            return "Failure to acquire ID for the specified channel."
+
+    else:
+        return "User <b>{0}</b> is already followed.".format(name)"""
+
+    if id:
+        c.execute(
+            """INSERT INTO twitch_streams 
+        (id, username, channel_id) values (NULL, ?, ?)""",
+            (name, id),
+        )
+        connection.commit()
+        connection.close()
+
+        return "User <b>{0}</b> followed.".format(name)
+
+    # is_live_req = twitch_req_session.get("https://api.twitch.tv/kraken/streams/{}".format(ID_COLFRA))  # TODO: Unhardcode this shit
+
+
+def cmd_unfollow(args):
+    name = args[0]
+    connection = sqlite3.connect(
+        "twitch_streams.db", detect_types=sqlite3.PARSE_DECLTYPES
+    )
+    c = connection.cursor()
+    c.execute(
+        "SELECT * FROM twitch_streams WHERE username=?;",
+        [
+            name,
+        ],
+    )
+    res = c.fetchone()
+    username, id = None, None
+
+    if not res:
+        connection.commit()
+        connection.close()
+        return "Channel {0} is not followed right now.".format(name)
+
+    else:
+        c.execute(
+            """DELETE FROM twitch_streams WHERE id = ? AND username = ?""",
+            (res[0], res[1]),
+        )
+        connection.commit()
+        connection.close()
+        return "User <b>{0}</b> unfollowed.".format(name)
+
+
+def cmd_list(args):
+    connection = sqlite3.connect(
+        "twitch_streams.db", detect_types=sqlite3.PARSE_DECLTYPES
+    )
+    c = connection.cursor()
+    c.execute("SELECT * FROM twitch_streams")
+    res = c.fetchall()
+
+    if not res:
+        return "Error occurred lolmao."
+    else:
+        output = "List of followed channels: <ul>"
+        for i in res:
+            output += "<li>{0} | {1} | {2}</li>".format(i[0], i[1], i[2])
+        output += "</ul>"
+        return output
 
 
 def cmd_currency(args: list) -> str:
@@ -229,7 +392,9 @@ def cmd_currency(args: list) -> str:
     if args[2].lower() == "in" or args[2].lower() == "to":
         target = args[3].upper()
 
-    req = requests.get("https://data.kurzy.cz/json/meny/b[6]den.json", params={"base": base})
+    req = requests.get(
+        "https://data.kurzy.cz/json/meny/b[6]den.json", params={"base": base}
+    )
 
     if req.status_code == 200:
         json_res = req.json()
@@ -250,7 +415,9 @@ def cmd_currency(args: list) -> str:
 
                     res_in_czk = base_rate_czk * float(amount) * jednotka_czk
                     result = res_in_czk / target_rate_czk
-                answer = "{0} {1} = <strong>{2:0.2f} {3}</strong>".format(amount, base, result, target)
+                answer = "{0} {1} = <strong>{2:0.2f} {3}</strong>".format(
+                    amount, base, result, target
+                )
 
             except Exception as e:
                 answer = "There was an error."
@@ -258,18 +425,24 @@ def cmd_currency(args: list) -> str:
 
             return answer
     else:
-        return "There was an error."
+        return "There was an error: {req.status_code}"
 
 
 def cmd_calculator(args: list) -> str:
     inp = " ".join(args)
-    headers = {"User-Agent": "Nokia5250/10.0.011 (SymbianOS/9.4; U; Series60/5.0 Mozilla/5.0; Profile/MIDP-2.1 "
-                             "Configuration/CLDC-1.1 ) AppleWebKit/525 (KHTML, like Gecko) Safari/525 3gpp-gba"}
+    headers = {
+        "User-Agent": "Nokia5250/10.0.011 (SymbianOS/9.4; U; Series60/5.0 Mozilla/5.0; Profile/MIDP-2.1 "
+        "Configuration/CLDC-1.1 ) AppleWebKit/525 (KHTML, like Gecko) Safari/525 3gpp-gba"
+    }
     payload = {"q": inp, "hl": "cs"}
-    req = requests.get("https://www.google.com/search?", params=payload, headers=headers, timeout=3)
+    req = requests.get(
+        "https://www.google.com/search?", params=payload, headers=headers, timeout=3
+    )
     soup = BeautifulSoup(req.text, "lxml")
 
-    result = soup.find("span", text=re.compile(r'.*Kalkulačka.*')).parent.parent.parent.parent
+    result = soup.find(
+        "span", text=re.compile(r".*Kalkulačka.*")
+    ).parent.parent.parent.parent
     table_result = result.find("tbody")
     spans = table_result.find_all("span")
     a = []
@@ -281,7 +454,9 @@ def cmd_calculator(args: list) -> str:
 
 def cmd_translate(args: list) -> str:
     inp = " ".join(args)
-    regex = re.compile(r"^([a-z]+[|][a-z]+)\s+(.*)$")  # TODO: compile elsewhere so it's worth it
+    regex = re.compile(
+        r"^([a-z]+[|][a-z]+)\s+(.*)$"
+    )  # TODO: compile elsewhere so it's worth it
     match = re.match(regex, inp)
 
     if match is not None:
@@ -291,9 +466,13 @@ def cmd_translate(args: list) -> str:
         return "Usage: .translate [lang|pair] [words]"
 
     payload = {"q": word, "langpair": langcode, "ie": "UTF8"}
-    headers = {"User-Agent": "Nokia5250/10.0.011 (SymbianOS/9.4; U; Series60/5.0 Mozilla/5.0; Profile/MIDP-2.1 "
-                             "Configuration/CLDC-1.1 ) AppleWebKit/525 (KHTML, like Gecko) Safari/525 3gpp-gba"}
-    response = requests.get("https://translate.google.com/m", params=payload, headers=headers)
+    headers = {
+        "User-Agent": "Nokia5250/10.0.011 (SymbianOS/9.4; U; Series60/5.0 Mozilla/5.0; Profile/MIDP-2.1 "
+        "Configuration/CLDC-1.1 ) AppleWebKit/525 (KHTML, like Gecko) Safari/525 3gpp-gba"
+    }
+    response = requests.get(
+        "https://translate.google.com/m", params=payload, headers=headers
+    )
 
     if response.status_code == 200:
         output = response.content
@@ -308,13 +487,15 @@ def cmd_translate(args: list) -> str:
 
 def cmd_intensify(args: list) -> str:
     inp = " ".join(args)
-    return "<span style='font-size: 36px'><b>[{} INTENSIFIES]</b></span>".format(inp.upper())
+    return "<span style='font-size: 36px'><b>[{} INTENSIFIES]</b></span>".format(
+        inp.upper()
+    )
 
 
 def cmd_youtube(args: list) -> str:
     # TODO REMOVE
-    base_url = 'https://www.googleapis.com/youtube/v3/'
-    search_api_url = base_url + 'search?part=id,snippet'
+    base_url = "https://www.googleapis.com/youtube/v3/"
+    search_api_url = base_url + "search?part=id,snippet"
     # api_url = base_url + 'videos?part=snippet,statistics,contentDetails'
     # video_url = "%s"
 
@@ -335,14 +516,15 @@ def cmd_youtube(args: list) -> str:
     for res in range(0, len(json_res["items"])):
         if res < 3:
             video_id = json_res["items"][res]["id"]["videoId"]
-            json_snippet  = json_res["items"][res]["snippet"]
+            json_snippet = json_res["items"][res]["snippet"]
             video_title = json_snippet["title"]
             video_desc = json_snippet["description"]
             video_chan = json_snippet["channelTitle"]
             video_datetime = json_snippet["publishTime"]
 
             final += "<li><b>{0}</b> <a href='https://youtu.be/{1}'>https://youtu.be/{1}</a> | {3} ({2})<li>".format(
-                video_title, video_id, video_datetime, video_chan)
+                video_title, video_id, video_datetime, video_chan
+            )
 
     final += "</ol>"
     return final
@@ -350,17 +532,26 @@ def cmd_youtube(args: list) -> str:
 
 def _get_urban_def(word, index):
     try:
-        req = requests.get("https://urbanscraper.herokuapp.com/search/{0}".format(word), timeout=5)
+        req = requests.get(
+            "https://urbanscraper.herokuapp.com/search/{0}".format(word), timeout=5
+        )
 
     except Exception as e:
         print(f"[Urban] Error sending request to urbanscrapper. Reason: {e}")
         return "[Urban] Unknown error."
 
     parsed = req.json()
-    return "[{0}]: {1}".format(parsed[index]["term"], parsed[index]["definition"]) \
-    if len(parsed[index]["definition"]) < 150 \
-    else "[{0}]: {1}… (more at {2})" .format(parsed[index]["term"],
-    parsed[index]["definition"][:150], "<a href='https://urbandictionary.com/define.php?term={0}'>https://urbandictionary.com/define.php?term={0}</a>".format(urllib.request.quote(word)))  # url je rozbitý
+    return (
+        "[{0}]: {1}".format(parsed[index]["term"], parsed[index]["definition"])
+        if len(parsed[index]["definition"]) < 150
+        else "[{0}]: {1}… (more at {2})".format(
+            parsed[index]["term"],
+            parsed[index]["definition"][:150],
+            "<a href='https://urbandictionary.com/define.php?term={0}'>https://urbandictionary.com/define.php?term={0}</a>".format(
+                urllib.request.quote(word)
+            ),
+        )
+    )  # url je rozbitý
 
 
 def cmd_urban(args):
@@ -378,8 +569,13 @@ def cmd_urban(args):
 
 def cmd_weather(args: list) -> str:
     location = "".join(args)
-    base_url = 'https://api.openweathermap.org/data/2.5/weather'
-    payload = {"q": location, "appid": Settings.openweathermap_appid, "lang": "en", "units": "metric"}
+    base_url = "https://api.openweathermap.org/data/2.5/weather"
+    payload = {
+        "q": location,
+        "appid": Settings.openweathermap_appid,
+        "lang": "en",
+        "units": "metric",
+    }
 
     # now, to get the actual weather
     try:
@@ -401,8 +597,10 @@ def cmd_weather(args: list) -> str:
         return "Could not get weather for that location."
 
     # put all the stuff we want to use in a dictionary for easy formatting of the output
-    current = f"<strong>{name}</strong>: {popis} - {teplota}°C (feels like {feels_like}°C) - " \
-                f"{vlhkost}% - {vitr_rychlost}km/h {vitr_uhel}°"
+    current = (
+        f"<strong>{name}</strong>: {popis} - {teplota}°C (feels like {feels_like}°C) - "
+        f"{vlhkost}% - {vitr_rychlost}km/h {vitr_uhel}°"
+    )
 
     print(current)
     return current
@@ -424,9 +622,9 @@ def cmd_streaming(args: str) -> str:
             country = Utils.get_geoip(currently_live[k]["ip_addr"]) or "N/A"
             final += """<li style="margin:10px">[{0}] streaming at</b><br/>
             <a href='rtmp://pooping.men/live/{1}'>rtmp://pooping.men/live/{1}</a><br/>
-            ({2})</li>""".format(country,
-                                 currently_live[k]["stream_key"],
-                                 currently_live[k]["timestamp"])
+            ({2})</li>""".format(
+                country, currently_live[k]["stream_key"], currently_live[k]["timestamp"]
+            )
     final += "</ul>"
 
     return final
@@ -434,4 +632,3 @@ def cmd_streaming(args: str) -> str:
 
 if __name__ == "__main__":
     print(cmd_translate(["cs|en j"]))
-    

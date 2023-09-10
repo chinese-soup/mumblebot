@@ -12,6 +12,7 @@ import pymumble_py3
 from pymumble_py3.messages import TextMessage
 from pymumble_py3.callbacks import PYMUMBLE_CLBK_TEXTMESSAGERECEIVED as TEXT_RECEIVED
 from pymumble_py3.callbacks import PYMUMBLE_CLBK_USERCREATED as USER_CREATED
+
 # beautifulsoup
 from bs4 import BeautifulSoup
 
@@ -49,7 +50,14 @@ else:
 passwd = Settings.server_password
 
 # Set up pymumble
-mumble = pymumble_py3.Mumble(server, nick, password=passwd, reconnect=True, certfile="data/public.pem", keyfile="data/private.pem")
+mumble = pymumble_py3.Mumble(
+    server,
+    nick,
+    password=passwd,
+    reconnect=True,
+    certfile="data/public.pem",
+    keyfile="data/private.pem",
+)
 mumble.start()
 mumble.is_ready()
 print(mumble.users.myself)
@@ -57,13 +65,29 @@ print(dir(mumble.users))
 # mumble.users.myself.deafen()
 mumble.set_receive_sound(False)
 _GLOBALS = globals()
+USERS = {}
+_past_twitchs = {}
 
 # Reminders stuff
 connection = sqlite3.connect("reminds.db", detect_types=sqlite3.PARSE_DECLTYPES)
 cur = connection.cursor()
-cur.execute("""CREATE TABLE IF NOT EXISTS reminds (id INTEGER PRIMARY KEY, date INTEGER, author text, content text, created_time TIMESTAMP);""")
-cur.execute("""CREATE TABLE IF NOT EXISTS intros (id INTEGER PRIMARY KEY, date INTEGER, author text, content text, created_time TIMESTAMP);""")
+cur.execute(
+    """CREATE TABLE IF NOT EXISTS reminds (id INTEGER PRIMARY KEY, date INTEGER, author text, content text, created_time TIMESTAMP);"""
+)
+cur.execute(
+    """CREATE TABLE IF NOT EXISTS intros (id INTEGER PRIMARY KEY, date INTEGER, author text, content text, created_time TIMESTAMP);"""
+)
 cur.close()
+
+connection_twitch_db = sqlite3.connect(
+    "twitch_streams.db", detect_types=sqlite3.PARSE_DECLTYPES
+)
+c_twitch = connection_twitch_db.cursor()
+# c.execute("""DROP TABLE reminds""")
+c_twitch.execute(
+    """CREATE TABLE IF NOT EXISTS twitch_streams (id INTEGER PRIMARY KEY, username INTEGER, channel_id INTEGER);"""
+)
+
 
 class Sounds:
     sound_filenames = [x for x in os.listdir("data/sounds/") if x[0] != "."]
@@ -74,14 +98,39 @@ class Sounds:
     sounds_joined = "|".join(sound_names)
     sounds_re = re.compile(f"^({sounds_joined})((p|r|e|$){{1,4}})$")
 
+
 def cmd_reload(args: list):
     Sounds.sound_filenames = [x for x in os.listdir("data/sounds/") if x[0] != "."]
-    Sounds.sound_names = [x.split(".")[0] for x in Sounds.sound_filenames if x[0] != "."]
+    Sounds.sound_names = [
+        x.split(".")[0] for x in Sounds.sound_filenames if x[0] != "."
+    ]
     Sounds.sound_filenames.sort()
     Sounds.sound_names.sort()
-    Sounds.sound_map = {key: value for (key, value) in zip(Sounds.sound_names, Sounds.sound_filenames)}
+    Sounds.sound_map = {
+        key: value for (key, value) in zip(Sounds.sound_names, Sounds.sound_filenames)
+    }
     Sounds.sounds_joined = "|\\b".join(Sounds.sound_names)
     Sounds.sounds_re = re.compile(f"^({Sounds.sounds_joined})((p|r|e|$){{1,4}})$")
+
+
+def cmd_twitch(args: str) -> str:
+    # {"timestamp": timestamp, "channel_name": channel_name, "title": title}
+    final = f"""<span><strong style='color:{Settings.header_color}'><br/>Streamer list</strong>:</span><ul>"""
+
+    if len(_past_twitchs) < 1:
+        final = f"<span><strong style='color:{Settings.header_color}'><br/>Sorry, no Twitch streams</strong></span><ul>"
+        return final
+
+    for k in _past_twitchs.keys():
+        name = k
+        title = _past_twitchs[k].get("title")
+        final += f"""<li style="margin:10px"><a href='https://twitch.tv/{name}'>twitch.tv/{name}</a> 
+            streaming {title} </b></li>"""
+
+    final += "</ul>"
+
+    return final
+
 
 def add_af_helper(af, append):
     if not af:
@@ -90,9 +139,11 @@ def add_af_helper(af, append):
         af += f",{append}"
     return af
 
+
 def sound_command(filename, pitch_shift=False, reverse=False, reverb=False):
     cmd = ["ffmpeg", "-i", filename, "-ac", "1", "-f", "s16le", "-ar", "48000"]
     af = ""
+    af = add_af_helper(af, "loudnorm=i=-32")
 
     if pitch_shift:
         meme = random.randint(1, 15) / 10
@@ -109,35 +160,46 @@ def sound_command(filename, pitch_shift=False, reverse=False, reverb=False):
     cmd.append("-")
 
     if reverb:
-        sp = subprocess.Popen(cmd, stdout=subprocess.PIPE,
-                              stderr=subprocess.DEVNULL,
-                              stdin=subprocess.DEVNULL)
+        sp = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+        )
 
-        cmd_reverb = ["ffmpeg",
-                      "-f",
-                      "s16le",
-                      "-i",
-                      "pipe:",
-                      "-i",
-                      "data/tunnel_entrance_b_4way_mono.wav",
-                      "-filter_complex",
-                      '[0] [1] afir=dry=9:wet=2 [reverb]; [0] [reverb] amix=inputs=2:weights=10 8',
-                      "-f",
-                      "s16le",
-                      "-"]
-        sp_reverb = subprocess.Popen(cmd_reverb, stdout=subprocess.PIPE,
-                              stderr=subprocess.DEVNULL,
-                              stdin=sp.stdout)
-
+        cmd_reverb = [
+            "ffmpeg",
+            "-f",
+            "s16le",
+            "-i",
+            "pipe:",
+            "-i",
+            "data/tunnel_entrance_b_4way_mono.wav",
+            "-filter_complex",
+            "[0] [1] afir=dry=9:wet=2 [reverb]; [0] [reverb] amix=inputs=2:weights=10 8",
+            "-f",
+            "s16le",
+            "-",
+        ]
+        sp_reverb = subprocess.Popen(
+            cmd_reverb,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            stdin=sp.stdout,
+        )
 
         result = sp_reverb.stdout.read()
         mumble.sound_output.add_sound(result)
 
     else:
-        sp = subprocess.Popen(cmd, stdout=subprocess.PIPE,
-                              stderr=subprocess.DEVNULL,
-                              stdin=subprocess.DEVNULL).stdout.read()
+        sp = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+        ).stdout.read()
         mumble.sound_output.add_sound(sp)
+
 
 def on_message(data):
     """
@@ -149,7 +211,7 @@ def on_message(data):
 
     msg = data.message
 
-    soup = BeautifulSoup(msg, 'lxml')
+    soup = BeautifulSoup(msg, "lxml")
     msg_fake = soup.get_text()
     match = link_re.match(msg_fake)
     print(msg_fake)
@@ -175,7 +237,9 @@ def on_message(data):
     match_intensify = re_intensify.match(msg_fake)
 
     if match_intensify is not None:
-        mumble.my_channel().send_text_message(f"<span style='font-size: 36px'><b>[{match_intensify.group(1).upper()} INTENSIFIES]</b></span>")
+        mumble.my_channel().send_text_message(
+            f"<span style='font-size: 36px'><b>[{match_intensify.group(1).upper()} INTENSIFIES]</b></span>"
+        )
 
     match_implying = re_implying.match(msg)
     pitched = False
@@ -201,39 +265,60 @@ def on_message(data):
             filetype = ""
 
         search2 = search.replace(filetype, "")
-        if "http" in search: return
+        if "http" in search:
+            return
 
-        payload = {"q": search2, "key": Settings.youtube_key, "cx": Settings.youtube_cx, "searchType": "image", "fileType": filetype}
+        payload = {
+            "q": search2,
+            "key": Settings.youtube_key,
+            "cx": Settings.youtube_cx,
+            "searchType": "image",
+            "fileType": filetype,
+        }
         request = requests.get(Settings.google_api_url, params=payload)
 
         print(request.text)
         json_res = request.json()
 
         data = json_res
-        mumble.my_channel().send_text_message("<span style='color: #789922;'>&gt;<strong>{0}</strong></span> <a href='{1}'>{1}</a>".format(search, data["items"][num]["link"]))
+        mumble.my_channel().send_text_message(
+            "<span style='color: #789922;'>&gt;<strong>{0}</strong></span> <a href='{1}'>{1}</a>".format(
+                search, data["items"][num]["link"]
+            )
+        )
 
     if msg.startswith(".commands") or msg.startswith(".help"):
-        commands = [i.replace("cmd_", ".") if i.startswith("cmd_") else "" for i in globals()]
-        mumble.my_channel().send_text_message(f"[<i>{Settings.bot_nickname}</i>] List of commands: {' '.join(commands)}")
+        commands = [
+            i.replace("cmd_", ".") if i.startswith("cmd_") else "" for i in globals()
+        ]
+        mumble.my_channel().send_text_message(
+            f"[<i>{Settings.bot_nickname}</i>] List of commands: {' '.join(commands)}"
+        )
 
     elif msg.startswith(".sounds"):
-        mumble.my_channel().send_text_message(f"[<i>{Settings.bot_nickname}</i>] List of sound commands: {' | '.join(Sounds.sound_names)}")
-
+        mumble.my_channel().send_text_message(
+            f"[<i>{Settings.bot_nickname}</i>] List of sound commands: {' | '.join(Sounds.sound_names)}"
+        )
 
     elif msg.startswith(Settings.command_prefix):
         msg = msg.strip().split()
         fname = msg[0].replace(Settings.command_prefix, "")
         cmd_fname = None
-        available_cmds_list = [x.replace("cmd_", "") for x in list(_GLOBALS) if x.startswith("cmd_")]
+        available_cmds_list = [
+            x.replace("cmd_", "") for x in list(_GLOBALS) if x.startswith("cmd_")
+        ]
 
         for i in available_cmds_list:
-            tmp = i[0:len(fname)] # Find a command that matches, e.g. ".we" matches the ".weather" cmd
+            tmp = i[
+                0 : len(fname)
+            ]  # Find a command that matches, e.g. ".we" matches the ".weather" cmd
             if tmp == fname:
                 cmd_fname = "cmd_{}".format(i)
                 break
 
-        if cmd_fname is not None: # we haven't found a command that matches, return early
-
+        if (
+            cmd_fname is not None
+        ):  # we haven't found a command that matches, return early
             args = msg[1:] or None
 
             if cmd_fname in _GLOBALS:
@@ -242,7 +327,6 @@ def on_message(data):
 
                 elif "cmd_intro" == cmd_fname:
                     return_value = _GLOBALS[cmd_fname](args, mumble.users[data.actor])
-
                 else:
                     return_value = _GLOBALS[cmd_fname](args)
 
@@ -275,7 +359,6 @@ def on_message(data):
                 sound_command(bruh_file, pitched, reversed, reverb)
 
 
-
 def on_userjoin(data):
     print("User joined!!")
     username = data["name"]
@@ -299,10 +382,12 @@ def on_userjoin(data):
 
     mumble.my_channel().send_text_message(output)
 
+
 mumble.callbacks.set_callback(TEXT_RECEIVED, on_message)
 mumble.callbacks.set_callback(USER_CREATED, on_userjoin)
 
-def cmd_intro(args: list, _from: str="") -> str:
+
+def cmd_intro(args: list, _from: str = "") -> str:
     if args:
         data = " ".join(args)
     else:
@@ -323,10 +408,14 @@ def cmd_intro(args: list, _from: str="") -> str:
             return f"Your sound is `{res[3]}`"
 
         if not res:
-            c.execute("INSERT INTO intros (id, author, content, created_time) values (NULL, ?, ?, ?)",
-                  (username, data, datetime.datetime.now()))
+            c.execute(
+                "INSERT INTO intros (id, author, content, created_time) values (NULL, ?, ?, ?)",
+                (username, data, datetime.datetime.now()),
+            )
         else:
-            c.execute("UPDATE intros SET content = (?) WHERE author = (?)", (data, username))
+            c.execute(
+                "UPDATE intros SET content = (?) WHERE author = (?)", (data, username)
+            )
 
         conn.commit()
         conn.close()
@@ -360,18 +449,58 @@ def check_remind(timer: int) -> int:
         for row in c:
             if int(row["date"]) < ts:
                 c.execute("DELETE FROM reminds WHERE id = ?", (int(row["id"]),))
-                mumble.my_channel().send_text_message("[<i>Reminder</i>] Hey, <b>{0}</b>: {1} (saved {2})"
-                                                      .format(row["author"], row["content"], row["created_time"].strftime("%a %d.%m.%Y %H:%M:%S")))
+                mumble.my_channel().send_text_message(
+                    "[<i>Reminder</i>] Hey, <b>{0}</b>: {1} (saved {2})".format(
+                        row["author"],
+                        row["content"],
+                        row["created_time"].strftime("%a %d.%m.%Y %H:%M:%S"),
+                    )
+                )
 
                 speech = "Hey, {}, reminder: {}".format(row["author"], row["content"])
-                espeak_cmd = ["espeak", "--stdout", "-a", "20", speech]
-                espeak_pipe = subprocess.Popen(espeak_cmd, stdout=subprocess.PIPE).stdout
+                # espeak_cmd = ["espeak", "--stdout", "-a", "20", speech]
+                # espeak_pipe = subprocess.Popen(espeak_cmd, stdout=subprocess.PIPE, stdin=subprocess.PIPE)
 
-                cmd = ["ffmpeg", "-i", "-", "-ac", "1", "-f", "s16le", "-ar", "48000", "-"]
-                sound = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                                         stdin=espeak_pipe).stdout.read()
+                # espeak_cmd = ["pico2wave", "--wave", "tmp.wav", "-l", "en-GB", speech]
+                # espeak_pipe = subprocess.Popen(espeak_cmd, stdout=subprocess.PIPE, stdin=subprocess.PIPE)
+                # file = espeak_pipe.communicate(input=speech.encode("utf-8"))[0]
+                try:
+                    b = requests.post(
+                        "http://ag.shitpost.fun:59125/api/tts",
+                        data=speech[0:150],
+                        timeout=2,
+                    )
+                    if b.status_code == 200:
+                        s = b.content
 
-                mumble.sound_output.add_sound(sound)
+                        cmd = [
+                            "ffmpeg",
+                            "-i",
+                            "-",
+                            "-ac",
+                            "1",
+                            "-f",
+                            "s16le",
+                            "-ar",
+                            "48000",
+                            "-",
+                        ]
+                        ffmpeg_sp = subprocess.Popen(
+                            cmd,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.DEVNULL,
+                            stdin=subprocess.PIPE,
+                        )
+                        sound, err = ffmpeg_sp.communicate(input=s)
+                        # print("Sound is =", sound)
+                        # print("Err is =", err)
+
+                        # espeak_cmd = ["espeak", "--stdout", "-a", "20", speech]
+                        # espeak_pipe = subprocess.Popen(espeak_cmd, stdout=subprocess.PIPE).stdout
+                        # print(file)
+                        mumble.sound_output.add_sound(sound)
+                except:
+                    print("Failed")
 
         conn.commit()
         conn.close()
@@ -394,8 +523,14 @@ def check_streams(timer: int, just_started: bool = False) -> int:
         timer = 0
 
         # Grab log file
-        if Settings.stream_alert_username is not None and Settings.stream_alert_password is not None:
-            session.auth = (Settings.stream_alert_username, Settings.stream_alert_password)
+        if (
+            Settings.stream_alert_username is not None
+            and Settings.stream_alert_password is not None
+        ):
+            session.auth = (
+                Settings.stream_alert_username,
+                Settings.stream_alert_password,
+            )
             log_result = session.get(Settings.stream_alert_url)
 
             # if succsessful
@@ -407,13 +542,17 @@ def check_streams(timer: int, just_started: bool = False) -> int:
                     timestamp = stream.group(1)
                     session_id = stream.group(2)
                     # group 3 is fucked
-                    publish_or_delete = stream.group(4) if stream.group(6) is None else stream.group(6)
+                    publish_or_delete = (
+                        stream.group(4) if stream.group(6) is None else stream.group(6)
+                    )
                     stream_key = stream.group(5)
                     ip_addr = stream.group(7)
 
-                    single_stream = {"timestamp": timestamp,
-                                     "stream_key": stream_key,
-                                     "ip_addr": ip_addr}
+                    single_stream = {
+                        "timestamp": timestamp,
+                        "stream_key": stream_key,
+                        "ip_addr": ip_addr,
+                    }
 
                     country = Utils.get_geoip(single_stream["ip_addr"]) or "N/A"
 
@@ -422,17 +561,26 @@ def check_streams(timer: int, just_started: bool = False) -> int:
                         print("[STREAM] new 'publish' log entry")
 
                         if session_id in Utils.past_publish:
-                            print("[STREAM] I already posted this: {0}".format(single_stream))
+                            print(
+                                "[STREAM] I already posted this: {0}".format(
+                                    single_stream
+                                )
+                            )
                             print("[STREAM] Ignoring ^".format(single_stream))
 
                         else:
                             # brand new publish
                             Utils.past_publish[session_id] = single_stream
-                            print(f"[STREAM] New unseen publish. Added entry to _past_publish, session_id={session_id}")
+                            print(
+                                f"[STREAM] New unseen publish. Added entry to _past_publish, session_id={session_id}"
+                            )
 
                             # announce to mumble, make sure stream key isn't on the ignore list
-                            if not just_started and single_stream["stream_key"] not in Settings.ignored_stream_keys:
-
+                            if (
+                                not just_started
+                                and single_stream["stream_key"]
+                                not in Settings.ignored_stream_keys
+                            ):
                                 mumble.my_channel().send_text_message(
                                     f"""<strong style='color:{Settings.header_color}'><br/>Stream alert</strong>:
                                     <span><ul style="list-style-type:none">
@@ -443,7 +591,9 @@ def check_streams(timer: int, just_started: bool = False) -> int:
                             else:
                                 # first time check_streams is ran the function
                                 # processes all past disconnect and publishes without posting them
-                                print("[STREAM] I've just started so I'm going to skip posting these to the Mumble.")
+                                print(
+                                    "[STREAM] I've just started so I'm going to skip posting these to the Mumble."
+                                )
 
                     #  process and log 'deleteStream'
                     #  doesn't necessarily mean a stream was deleted. it's more 'disconnect'
@@ -452,18 +602,27 @@ def check_streams(timer: int, just_started: bool = False) -> int:
 
                         if session_id in Utils.past_publish:
                             if "deleted" in Utils.past_publish[session_id]:
-                                print("[STREAM] I already marked this stream as deleted: {0}".format(single_stream))
+                                print(
+                                    "[STREAM] I already marked this stream as deleted: {0}".format(
+                                        single_stream
+                                    )
+                                )
 
                             else:
                                 # new unseen deletion
                                 print("[STREAM] New unseen delete.")
 
-                                if not just_started and Settings.announce_disconnects:  # announce disconnect to mumble (if enabled)
-                                    print(f"""[STREAM] a stream just ended, session_id:{single_stream["session_id"]}""")
+                                if (
+                                    not just_started and Settings.announce_disconnects
+                                ):  # announce disconnect to mumble (if enabled)
+                                    print(
+                                        f"""[STREAM] a stream just ended, session_id:{single_stream["session_id"]}"""
+                                    )
 
                                     mumble.my_channel().send_text_message(
                                         f"""<strong style='color:{Settings.header_color}'><br/>Stream ended</strong>:
-                                        <br/><span>Someone [{country}] stopped streaming</span>""")
+                                        <br/><span>Someone [{country}] stopped streaming</span>"""
+                                    )
 
                                 Utils.past_publish[session_id]["deleted"] = True
 
@@ -472,7 +631,11 @@ def check_streams(timer: int, just_started: bool = False) -> int:
                             # print(f"[STREAM] I have never seen this stream ({session_id}), so I can't mark this as deleted.")
                     else:
                         # Something is wrong in the log if we got here
-                        print("[STREAM:WARN] new 'unknown' log entry: {}".format(single_stream))
+                        print(
+                            "[STREAM:WARN] new 'unknown' log entry: {}".format(
+                                single_stream
+                            )
+                        )
 
                 print("[STREAM] Log grab result: {}".format(log_result))
             else:
@@ -484,11 +647,18 @@ def check_ag_server(timer, players_old, just_started=False):
     timer += 1
 
     if timer > 15 or just_started:
-        timer = 0 # Reset timer, regardless of result
+        timer = 0  # Reset timer, regardless of result
         try:
-            players_full = gs.a2s_players((Settings.hlds_server_ip, Settings.hlds_server_port))
+            players_full = gs.a2s_players(
+                (Settings.hlds_server_ip, Settings.hlds_server_port)
+            )
 
-            players = [Utils.strip_nick(x["name"]) for x in players_full if not x["name"].startswith("BOT:") and not x["name"].startswith("HLKZ Dummy")]
+            players = [
+                Utils.strip_nick(x["name"])
+                for x in players_full
+                if not x["name"].startswith("BOT:")
+                and not x["name"].startswith("HLKZ Dummy")
+            ]
 
             players_set = set(players)
             players_old_set = set(players_old)
@@ -497,13 +667,18 @@ def check_ag_server(timer, players_old, just_started=False):
             diff = list(diff)
             if len(diff) > 0:
                 if not just_started:
-                    info = a2s.info((Settings.hlds_server_ip, Settings.hlds_server_port))
-                    rules = gs.a2s_rules((Settings.hlds_server_ip, Settings.hlds_server_port))
+                    info = a2s.info(
+                        (Settings.hlds_server_ip, Settings.hlds_server_port)
+                    )
+                    rules = gs.a2s_rules(
+                        (Settings.hlds_server_ip, Settings.hlds_server_port)
+                    )
 
                     mumble.my_channel().send_text_message(
                         f"""<span style='font-size: 8pt'><b>{' | '.join(diff)} joined the AG server</b>. Map = {info.map_name}
                         | Timeleft = {rules['amx_timeleft']} |
-                        <a href="steam://connect/81.2.254.217:27015">Join server</a></span>""")
+                        <a href="steam://connect/81.2.254.217:27015">Join server</a></span>"""
+                    )
 
             players_old = players
 
@@ -574,7 +749,15 @@ def check_ag_records(timer, just_started=False):
                             print("[AG Records] Continuing, not a WR logfile line.")
                             continue
 
-                        wrr, hlkz, nickname, mapname, rank, typeg, recordtime = wr.split("|")
+                        (
+                            wrr,
+                            hlkz,
+                            nickname,
+                            mapname,
+                            rank,
+                            typeg,
+                            recordtime,
+                        ) = wr.split("|")
 
                         if wr in Utils.past_records:
                             print("I already posted this: {0}".format(wr))
@@ -584,7 +767,11 @@ def check_ag_records(timer, just_started=False):
                                 Utils.past_records.pop(0)
 
                             Utils.past_records.append(wr)
-                            print("[AG Records] Hello, new stream appeared: {0}".format(wr))
+                            print(
+                                "[AG Records] Hello, new stream appeared: {0}".format(
+                                    wr
+                                )
+                            )
 
                             if not just_started:
                                 mumble.my_channel().send_text_message(
@@ -592,14 +779,20 @@ def check_ag_records(timer, just_started=False):
                                     on <b>{mapname}</b>: 
                                     {nickname} is now place #{rank} with a time of {recordtime}</span>"""
                                 )
-                                print(f"""<span style='font-size: 8pt'><strong>New AG {typeg} record</strong>
+                                print(
+                                    f"""<span style='font-size: 8pt'><strong>New AG {typeg} record</strong>
                                     on <b>{mapname}</b>: 
-                                    {nickname} is now place #{rank} with a time of {recordtime}</span>""")
+                                    {nickname} is now place #{rank} with a time of {recordtime}</span>"""
+                                )
                             else:
-                                print("[RECORD] Sorry, I literally just booted up, ignoring all previous streams.")
+                                print(
+                                    "[RECORD] Sorry, I literally just booted up, ignoring all previous streams."
+                                )
 
                     except Exception as e:
-                        print(f"[AG Records] Couldn't split to wr,hlkz,nickname,rank,type,time. Orig line = {wr}")
+                        print(
+                            f"[AG Records] Couldn't split to wr,hlkz,nickname,rank,type,time. Orig line = {wr}"
+                        )
                     # print(res)
 
                 else:
@@ -614,6 +807,94 @@ def check_ag_records(timer, just_started=False):
 
     return timer
 
+
+def check_twitch(timer, just_started=False):
+    timer += 1
+
+    if timer > 120:
+        print("Hey babe. Time to check for twitch streams.")
+        timer = 0
+
+        if len(_past_twitchs) > 20:  # queue
+            _past_twitchs.pop(0)
+
+        connection = sqlite3.connect(
+            "twitch_streams.db", detect_types=sqlite3.PARSE_DECLTYPES
+        )
+        c = connection.cursor()
+        c.execute("SELECT * FROM twitch_streams")
+        res = c.fetchall()
+
+        for id, name, channel_id in res:
+            # is_live_req = Const.twitch_req_session.get("https://api.twitch.tv/kraken/streams/{}".format(channel_id))
+            is_live_req = requests.get(f"https://twitch.tv/{name}")
+            print("[Twitch] Checking {0} {1} {2}".format(id, name, channel_id))
+
+            if is_live_req.status_code == 200:
+                # is_live_json = is_live_req.json()
+                website_text = is_live_req.text
+
+                if "isLiveBroadcast" not in website_text:
+                    print(f"This channel is not streaming {name}")
+                    """try:
+                        pass
+                        #_past_twitchs.pop(name)
+                    except:
+                        pass"""
+                    continue
+
+                soup = BeautifulSoup(is_live_req.text, "lxml")
+                results = soup.findAll("script", {"type": "application/ld+json"})
+
+                if len(results) == 0:
+                    continue
+
+                result = results[0]
+                stream = json.loads(result.string)
+                publication = stream[0].get("publication")
+                timestamp = publication.get("startDate")
+                title = stream[0]["description"]
+                channel_name = name
+                print(timestamp, title, channel_name)
+                key = f"{name}"
+
+                if (
+                    key in _past_twitchs
+                    and _past_twitchs[key]["timestamp"] == timestamp
+                ):
+                    print(
+                        "[TWITCH !!!] I already posted this: {0} {1}".format(
+                            timestamp, channel_name
+                        )
+                    )
+                else:
+                    single_stream = {
+                        "timestamp": timestamp,
+                        "channel_name": channel_name,
+                        "title": title,
+                        "time_added": datetime.datetime.now(),
+                    }
+                    _past_twitchs[key] = single_stream
+                    print(
+                        "[STREAM] Hello, new TWITCH appeared: {0}".format(single_stream)
+                    )
+                    mumble.my_channel().send_text_message(
+                        """<span><strong>Twitch.tv stream alert</strong>: 
+                            <ul>
+                            <li><b>{0}</b> started streaming <b> | <a href='http://twitch.tv/{0}'>http://twitch.tv/{0}</a></b>.</li>
+                            <li><b>Title: </b> {2}</li>
+                            <li>Published @ {1} (UTC)</li>
+                            </ul></span>""".format(
+                            channel_name, timestamp, title
+                        )
+                    )
+
+    else:
+        print("[Twitch] Timer not yet ticking.")
+
+    return timer
+
+
 # Prepare initial vars for periodic checks
 value = 0
 streams_value = 0
@@ -626,14 +907,20 @@ timer = 0
 # Run periodic stuff manually first, to get initial states in
 streams_value = check_streams(streams_value, initial_start)
 ag_records_value = check_ag_records(streams_value, initial_start)
-ag_server_value, players_old = check_ag_server(streams_value, players_old, initial_start)
 mc_server_value, mc_players_old = check_minecraft_servers(timer, mc_players_old, initial_start)
+ag_server_value, players_old = check_ag_server(
+    streams_value, players_old, initial_start
+)
+# checks_sound_data_value = check_sound_data(streams_value, initial_start)
+twitchs_value = check_twitch(119, False)
 
-while True: # Run periodically in the non-pymumble thread
+while True:  # Run periodically in the non-pymumble thread
     value = check_remind(value)
     streams_value = check_streams(streams_value)
     ag_records_value = check_ag_records(ag_records_value)
     ag_server_value, players_old = check_ag_server(ag_server_value, players_old)
+    # checks_sound_data_value = check_sound_data(checks_sound_data_value)
+    twitchs_value = check_twitch(twitchs_value, initial_start)
 
     mc_server_value, mc_players_old = check_minecraft_servers(mc_server_value, mc_players_old)
 
