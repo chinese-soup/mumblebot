@@ -177,8 +177,12 @@ def cmd_server(args: list) -> str:
         return "Failed to contact the game server."
 
 
-def cmd_osrs_wise(username: str, skill: str, other_argument: str) -> str:
+def cmd_osrs_wise(args: list) -> str:
     # Check if the username is a list and extract the first element
+    skill = args[-1]
+    # concat all previous args into one for the username
+    username = " ".join(args[:-1])
+
     if skill in osrs_skill_short:
         skill = osrs_skill_short[skill]
 

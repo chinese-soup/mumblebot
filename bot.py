@@ -328,12 +328,6 @@ def on_message(data):
 
                 elif "cmd_intro" == cmd_fname:
                     return_value = _GLOBALS[cmd_fname](args, mumble.users[data.actor])
-
-                elif "cmd_osrs_wise" == cmd_fname:
-                    skill = args[-1]
-                    # concat all previous args into one for the username
-                    username = " ".join(args[:-1])
-                    return_value = _GLOBALS[cmd_fname](username, skill, args)
                 else:
                     return_value = _GLOBALS[cmd_fname](args)
 
