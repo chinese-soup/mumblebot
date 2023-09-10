@@ -115,15 +115,12 @@ def cmd_twitch(args: str) -> str:
     # {"timestamp": timestamp, "channel_name": channel_name, "title": title}
     final = f"""<span><strong style='color:{Settings.header_color}'><br/>Streamer list</strong>:</span><ul>"""
 
-    # currently_live = [x for x in Utils.past_publish.values() if "deleted" not in x]
-
     if len(_past_twitchs) < 1:
         final = f"<span><strong style='color:{Settings.header_color}'><br/>Sorry, no Twitch streams</strong></span><ul>"
         return final
 
-    # build the output
     for k in _past_twitchs.keys():
-        name = k.split("_")[0]
+        name = k
         title = _past_twitchs[k].get("title")
         final += f"""<li style="margin:10px"><a href='https://twitch.tv/{name}'>twitch.tv/{name}</a> 
             streaming {title} </b></li>"""
