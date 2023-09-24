@@ -52,7 +52,6 @@ class Utils:
             country = pycountry.countries.search_fuzzy(location)[0]
             country_code = country.alpha_2
             timezones = pytz.country_timezones(country_code)[0]
-            print(country_code, timezones)
 
             if timezones:
                 timezone = pytz.timezone(timezones)
