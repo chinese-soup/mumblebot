@@ -1,41 +1,35 @@
 #!/usr/bin/env python3
 
-import time
-import re
-import requests
-import sys
-import random
 import os
-
-# pymumble
-import pymumble_py3
-from pymumble_py3.messages import TextMessage
-from pymumble_py3.callbacks import PYMUMBLE_CLBK_TEXTMESSAGERECEIVED as TEXT_RECEIVED
-from pymumble_py3.callbacks import PYMUMBLE_CLBK_USERCREATED as USER_CREATED
-
-# beautifulsoup
-from bs4 import BeautifulSoup
-
-# subprocess to call ffmpeg
-import subprocess
-
+import random
+import re
 # sqlite3
 import sqlite3
-
-# Bot commands
-from commands import *
-
-# Bot utils
-from utils import Utils
+# subprocess to call ffmpeg
+import subprocess
+import sys
+import time
 
 # Half-Life server querying
 import a2s
+# pymumble
+import pymumble_py3
+import requests
+# beautifulsoup
+from bs4 import BeautifulSoup
+from mcstatus import JavaServer
+from pymumble_py3.callbacks import \
+    PYMUMBLE_CLBK_TEXTMESSAGERECEIVED as TEXT_RECEIVED
+from pymumble_py3.callbacks import PYMUMBLE_CLBK_USERCREATED as USER_CREATED
+from pymumble_py3.messages import TextMessage
 from steam import game_servers as gs
 
-from mcstatus import JavaServer
-
+# Bot commands
+from commands import *
 # Pre-compiled regular expressions
 from regexp import _stream_all_regex, link_re, re_implying, re_intensify
+# Bot utils
+from utils import Utils
 
 if sys.argv[1]:
     server = sys.argv[1]

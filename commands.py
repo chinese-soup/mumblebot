@@ -1,30 +1,25 @@
 #!/usr/bin/env python3
-import requests
-import sys
-import re
-import json
-import urllib.request
-from bs4 import BeautifulSoup
-from random import randint
 import datetime
-from tabulate import tabulate
+import json
+import re
+# For databases (.remind)
+import sqlite3
+import sys
+import urllib.request
+from random import randint
 
 # For obtaining Half-Life server info
 import a2s
-
-from mcstatus import JavaServer
-
-# For databases (.remind)
-import sqlite3
-
+import requests
+from bs4 import BeautifulSoup
 # GeoIP for rtmp stream announcements
 from geoip import geolite2
-
-from settings import Settings
+from mcstatus import JavaServer
+from tabulate import tabulate
 
 # Pre-compiled regular expressions
 from regexp import _wiki_regex, osrs_skill_short
-
+from settings import Settings
 # Bot utils
 from utils import Utils
 
@@ -608,6 +603,22 @@ def cmd_weather(args: list) -> str:
 
     print(current)
     return current
+
+
+def cmd_time(args: list) -> str:
+    if not args:
+        result = "<ul>"
+        locations = ["Britain", "Germany", "Czechia", "Japan"]
+        for location in locations:
+            time = Utils.get_current_time(location)
+            result += f"<li>{time}</li>"
+        result += "</ul>"
+        return result
+
+    location = "".join(args)
+    time = Utils.get_current_time(location)
+
+    return time
 
 
 def cmd_streaming(args: str) -> str:
