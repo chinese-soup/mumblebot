@@ -37,9 +37,17 @@ class Utils:
                 current_time = pytz.utc.localize(datetime.datetime.utcnow()).astimezone(
                     timezone
                 )
-                return f"Current time in {timezone}: {current_time.strftime('%H:%M:%S %Z (%z) %Y-%m-%d')} {timezone}"
+                # return f"Current time in {timezone}: {current_time.strftime('%H:%M:%S %Z (%z) %Y-%m-%d')} {timezone}"
+                return [
+                    str(timezone),
+                    current_time.strftime("%Z"),
+                    current_time.strftime("%H:%M:%S"),
+                    current_time.strftime("%z"),
+                    current_time.strftime("%Y-%m-%d"),
+                ]
             else:
-                return f"Timezone not found for {location}"
+                return [f"Timezone not found for {location}"]
+
         except KeyError:
             country = pycountry.countries.search_fuzzy(location)[0]
             country_code = country.alpha_2
@@ -51,9 +59,15 @@ class Utils:
                 current_time = pytz.utc.localize(datetime.datetime.utcnow()).astimezone(
                     timezone
                 )
-                return f"Current time in {country_code}: {current_time.strftime('%H:%M:%S %Z (%z) %Y-%m-%d')} {timezone}"
+                return [
+                    str(timezone),
+                    current_time.strftime("%Z"),
+                    current_time.strftime("%H:%M:%S"),
+                    current_time.strftime("%z"),
+                    current_time.strftime("%Y-%m-%d"),
+                ]
             else:
-                return f"Timezone not found for {location}"
+                return [f"Timezone not found for {location}"]
 
     @staticmethod
     def get_url(match):

@@ -2,6 +2,7 @@
 import datetime
 import json
 import re
+
 # For databases (.remind)
 import sqlite3
 import sys
@@ -12,6 +13,7 @@ from random import randint
 import a2s
 import requests
 from bs4 import BeautifulSoup
+
 # GeoIP for rtmp stream announcements
 from geoip import geolite2
 from mcstatus import JavaServer
@@ -20,6 +22,7 @@ from tabulate import tabulate
 # Pre-compiled regular expressions
 from regexp import _wiki_regex, osrs_skill_short
 from settings import Settings
+
 # Bot utils
 from utils import Utils
 
@@ -607,18 +610,35 @@ def cmd_weather(args: list) -> str:
 
 def cmd_time(args: list) -> str:
     if not args:
-        result = "<ul>"
-        locations = ["Britain", "Germany", "Czechia", "Japan"]
+        locations = ["Britain", "Czechia", "Japan"]
+        result = [
+            ["Timezone", "TZ", "Time", "+/-", "Date"],
+        ]
+
         for location in locations:
             time = Utils.get_current_time(location)
-            result += f"<li>{time}</li>"
-        result += "</ul>"
+            if len(time) == 1:
+                return time
+
+            elif len(time) == 5:
+                result.append(time)
+
+        return (
+            f"<pre>"
+            f"<span style='font-family: monospace'>"
+            f"{tabulate(result, tablefmt='fancy_grid', headers='firstrow')}</span>"
+            f"</pre>"
+        )
         return result
 
     location = "".join(args)
     time = Utils.get_current_time(location)
-
-    return time
+    if len(time) == 1:
+        return time[0]
+    else:
+        return (
+            f"Current time in <strong>{time[0]}</strong>: {time[2]} {time[1]} {time[3]}"
+        )
 
 
 def cmd_streaming(args: str) -> str:
